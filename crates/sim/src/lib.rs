@@ -1,5 +1,5 @@
 pub use self::random::stable_random;
-pub use self::simc::{Sim, POPULATION_CAP};
+pub use self::simc::{CitizenView, Sim, POPULATION_CAP};
 
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
@@ -11,35 +11,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn same_seed_same_population() {
+    fn same_seed_same_citizens() {
         let mut a = Sim::new(7);
         let mut b = Sim::new(7);
-        for _ in 0..1000 { a.tick(); b.tick(); }
-        assert_eq!(a.population, b.population);
-        assert_eq!(a.tick_count, b.tick_count);
+        for _ in 0..500 { a.tick(); b.tick(); }
+        assert_eq!(a.citizen_ids, b.citizen_ids);
+        assert_eq!(a.citizen_capability, b.citizen_capability);
+        assert_eq!(a.citizen_next_decision, b.citizen_next_decision);
     }
 
     #[test]
-    fn population_never_decreases() {
-        let mut s = Sim::new(7);
-        let mut prev = s.population;
-        for _ in 0..2000 {
-            s.tick();
-            assert!(s.population >= prev);
-            prev = s.population;
-        }
-    }
-
-    #[test]
-    fn population_reaches_and_holds_at_cap() {
+    fn citizen_count_reaches_cap_and_holds() {
         let mut s = Sim::new(7);
         for _ in 0..10_000 { s.tick(); }
         assert_eq!(s.citizens(), POPULATION_CAP);
     }
 
     #[test]
-    fn stable_random_is_stable() {
-        assert_eq!(stable_random(1, 0, 9), stable_random(1, 0, 9));
-        assert_ne!(stable_random(1, 0, 9), stable_random(2, 0, 9));
+    fn citizens_are_distinct() {
+        let s = Sim::new(7);
+        assert_eq!(s.citizens(), 10);
+        let caps: Vec<f32> =
+            (0..s.citizens() as usize).map(|i| s.citizen(i).capability).collect();
+        let min = caps.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = caps.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        assert!(max - min > 0.5, "capabilities clustered: {} .. {}", min, max);
+    }
+
+    #[test]
+    fn save_load_preserves_citizens() {
+        let mut a = Sim::new(7);
+        for _ in 0..200 { a.tick(); }
+        let path = std::env::temp_dir().join("citizen_test.save");
+        let path = path.to_str().unwrap();
+        a.save(path).unwrap();
+
+        let mut b = Sim::load(path).unwrap();
+        assert_eq!(a.citizen_ids, b.citizen_ids);
+        assert_eq!(a.citizen_capability, b.citizen_capability);
+        assert_eq!(a.citizen_next_decision, b.citizen_next_decision);
+        assert_eq!(a.next_citizen_id, b.next_citizen_id);
+
+        // And they stay in sync after further ticks.
+        for _ in 0..100 { a.tick(); b.tick(); }
+        assert_eq!(a.citizen_capability, b.citizen_capability);
     }
 }

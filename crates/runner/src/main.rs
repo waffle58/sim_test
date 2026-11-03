@@ -15,9 +15,20 @@ enum Command {
     Pause,
     Resume,
     Status,
+    List,
     Help,
     Quit,
     Unknown(String),
+}
+fn derive_seed_from_name(name: &str) -> u64 {
+    // FNV-1a 64-bit. Stable per name, so `new alpha` always gives the
+    // same world; different names give different worlds.
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in name.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
 }
 
 fn parse_command(line: &str) -> Command {
@@ -26,10 +37,14 @@ fn parse_command(line: &str) -> Command {
         return Command::Unknown(String::new());
     };
     match head.to_ascii_lowercase().as_str() {
-        "new" => Command::New {
-            name: parts.next().unwrap_or("world").to_string(),
-            seed: parts.next().and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_SEED),
-        },
+        "new" => {
+            let name = parts.next().unwrap_or("world").to_string();
+            let seed = parts
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| derive_seed_from_name(&name));
+            Command::New { name, seed }
+        }
         "load" => Command::Load {
             name: parts.next().unwrap_or("world").to_string(),
         },
@@ -37,6 +52,7 @@ fn parse_command(line: &str) -> Command {
         "pause" => Command::Pause,
         "resume" | "play" => Command::Resume,
         "status" => Command::Status,
+        "list" | "ls" => Command::List,
         "help" | "?" => Command::Help,
         "quit" | "exit" | "q" => Command::Quit,
         other => Command::Unknown(other.to_string()),
@@ -45,6 +61,25 @@ fn parse_command(line: &str) -> Command {
 
 fn save_path(name: &str) -> PathBuf {
     PathBuf::from(SAVE_DIR).join(format!("{name}.save"))
+}
+
+fn validate_save_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("save name is empty".into());
+    }
+    if name.len() > 32 {
+        return Err("save name is longer than 32 characters".into());
+    }
+    if name == "." || name == ".." {
+        return Err("'.' and '..' are not valid save names".into());
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(format!(
+            "save name '{}' contains invalid characters (use letters, digits, _ or -)",
+            name
+        ));
+    }
+    Ok(())
 }
 
 fn spawn_input_thread() -> Receiver<String> {
@@ -73,6 +108,7 @@ fn print_help() {
     println!("  save                write current world to saves/<name>.save");
     println!("  pause / resume      stop or start simulation time");
     println!("  status              print current world summary");
+    println!("  list                print every citizen in the current world");
     println!("  help                this list");
     println!("  quit                exit");
 }
@@ -106,24 +142,34 @@ fn main() {
                         Command::Quit => { quit = true; break; }
                         Command::Help => print_help(),
                         Command::New { name, seed } => {
-                            let s = Sim::new(seed);
-                            println!("new '{}' (seed {}), pop {} (cap {})",
-                                     name, seed, s.citizens(), POPULATION_CAP);
-                            sim = Some(s);
-                            current_name = Some(name);
-                            paused = false;
-                        }
-                        Command::Load { name } => {
-                            let path = save_path(&name);
-                            match Sim::load(path.to_str().unwrap()) {
-                                Ok(s) => {
-                                    println!("loaded '{}', pop {}, t={}",
-                                             name, s.citizens(), s.tick_count);
+                            match validate_save_name(&name) {
+                                Ok(()) => {
+                                    let s = Sim::new(seed);
+                                    println!("new '{}' (seed {}), pop {} (cap {})",
+                                            name, seed, s.citizens(), POPULATION_CAP);
                                     sim = Some(s);
                                     current_name = Some(name);
                                     paused = false;
                                 }
-                                Err(e) => eprintln!("load failed: {e}"),
+                                Err(e) => eprintln!("{}", e),
+                            }
+                        }
+                        Command::Load { name } => {
+                            match validate_save_name(&name) {
+                                Ok(()) => {
+                                    let path = save_path(&name);
+                                    match Sim::load(path.to_str().unwrap()) {
+                                        Ok(s) => {
+                                            println!("loaded '{}', pop {}, t={}",
+                                                    name, s.citizens(), s.tick_count);
+                                            sim = Some(s);
+                                            current_name = Some(name);
+                                            paused = false;
+                                        }
+                                        Err(e) => eprintln!("load failed: {e}"),
+                                    }
+                                }
+                                Err(e) => eprintln!("{}", e),
                             }
                         }
                         Command::Save => match (&sim, &current_name) {
@@ -146,11 +192,23 @@ fn main() {
                         }
                         Command::Status => match (&sim, &current_name) {
                             (Some(s), Some(name)) => println!(
-                                "'{}' pop {} / {} t={} {}",
-                                name, s.citizens(), POPULATION_CAP, s.tick_count,
+                                "'{}' seed={} pop {} / {} t={} {}",
+                                name, s.world_seed, s.citizens(), POPULATION_CAP, s.tick_count,
                                 if paused { "(paused)" } else { "(running)" }
                             ),
                             _ => println!("no world loaded"),
+                        },
+                        Command::List => match &sim {
+                        Some(s) => {
+                            println!("{} citizens in '{}':",
+                                s.citizens(), current_name.as_deref().unwrap_or("?"));
+                            for i in 0..s.citizens() as usize {
+                                let c = s.citizen(i);
+                                println!("  #{:<3} cap={:.3} next=t{}",
+                            c.id, c.capability, c.next_decision);
+                            }
+                        }
+                            None => eprintln!("no world loaded"),
                         },
                         Command::Unknown(w) => eprintln!("unknown command '{}' (try 'help')", w),
                     }

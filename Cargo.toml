@@ -1,6 +1,3 @@
-[package]
-name = "sim_test"
-version = "0.0.1"
-edition = "2024"
-
-[dependencies]
+[workspace]
+members = ["crates/sim", "crates/runner"]
+resolver = "2"

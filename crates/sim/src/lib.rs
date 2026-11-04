@@ -1,7 +1,7 @@
 //! lib.rs — module root for the whole simulation.
 
 pub use self::random::stable_random;
-pub use self::simc::{CitizenView, DeadCitizenView, Sim, DEFAULT_POPULATION_CAP};
+pub use self::simc::{CitizenView, DeadCitizenView, Sim, Tunables};
 
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
@@ -91,7 +91,7 @@ mod tests {
         let s = Sim::new(7);
         let mut seen = std::collections::HashSet::new();
         for i in 0..s.citizens() as usize {
-            assert!(seen.insert(s.citizen_code(i)));
+            assert!(seen.insert(s.citizen_display_id(i)));
         }
     }
 }

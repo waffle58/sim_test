@@ -5,48 +5,121 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-// --- Population growth ---
-const STARTING_CITIZENS: u32 = 10;
-pub const DEFAULT_POPULATION_CAP: u32 = 50;
-const MIN_GROWTH_INTERVAL: u64 = 35; 
-const MAX_GROWTH_INTERVAL: u64 = 45; 
-const MAX_GROWTH: u32 = 3;
-const EVENT_POP_GROWTH: u64 = 1;
-const EVENT_POP_INTERVAL: u64 = 2;
-
-// --- Food ---
-const STARTING_FOOD: i64 = 100;
-const FOOD_PER_SPAWN: i64 = 10;
-
-// --- Per-citizen eq drift ---
+// --- Non-tunable constants ---
 const EQ_STEP: f32 = 0.02;
-const EQ_DRIFT_PERIOD: u64 = 17;
 const EVENT_INITIAL_EQ: u64 = 3;
 const EVENT_EQ_TRIGGER: u64 = 4;
 const EVENT_EQ_DRIFT: u64 = 5;
-
-// --- Death ---
-// Separate timer from growth. Interval rolls independently.
-const MIN_DEATH_INTERVAL: u64 = 95;    
-const MAX_DEATH_INTERVAL: u64 = 105;   
-const MAX_DEATH: u32 = 2;
+const EVENT_POP_GROWTH: u64 = 1;
+const EVENT_POP_INTERVAL: u64 = 2;
 const EVENT_DEATH_INTERVAL: u64 = 6;
 const EVENT_DEATH_COUNT: u64 = 7;
 const EVENT_DEATH_PICK: u64 = 8;
-
-// --- Public code generation ---
-const ID_BITS: u32 = 50;
-const TYPE_SHIFT: u32 = 40;
-const INTERNAL_MASK: u64 = (1u64 << TYPE_SHIFT) - 1;
-const ID_MASK: u64 = (1u64 << ID_BITS) - 1;
-const CODE_LEN: usize = 10;
-const EVENT_ID_KEY: u64 = 100;
-const TYPE_CITIZEN: u8 = 1;
-const CROCKFORD: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-// --- Save format ---
-const SAVE_VERSION: u32 = 3;
+pub const MAX_CITIZEN_ID: u32 = 999_999_999;
+const SAVE_VERSION: u32 = 4;
 const CITIZENS_PER_SHARD: usize = 10_000;
+
+// --- Tunables: everything you might want to change for pacing/feel ---
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Tunables {
+    pub starting_citizens: u32,
+    pub starting_food: i64,
+    pub default_cap: u32,
+    pub food_per_spawn: i64,
+    pub min_growth_interval: u64,
+    pub max_growth_interval: u64,
+    pub max_growth: u32,
+    pub min_death_interval: u64,
+    pub max_death_interval: u64,
+    pub max_death: u32,
+    pub eq_drift_period: u64,
+}
+
+impl Default for Tunables {
+    fn default() -> Self {
+        Tunables {
+            starting_citizens: 10,
+            starting_food: 100,
+            default_cap: 50,
+            food_per_spawn: 10,
+            min_growth_interval: 35,
+            max_growth_interval: 45,
+            max_growth: 3,
+            min_death_interval: 95,
+            max_death_interval: 105,
+            max_death: 2,
+            eq_drift_period: 17,
+        }
+    }
+}
+
+impl Tunables {
+    pub fn from_file(path: &str) -> std::io::Result<Self> {
+        let s = fs::read_to_string(path)?;
+        serde_json::from_str(&s)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+
+    pub fn to_file(&self, path: &str) -> std::io::Result<()> {
+        let s = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        fs::write(path, s)
+    }
+
+    /// Set one field by name from a string value. Returns Err on unknown field or bad parse.
+    pub fn set_field(&mut self, field: &str, value: &str) -> Result<(), String> {
+        let parse_u64 = |v: &str| v.parse::<u64>().map_err(|_| format!("invalid number '{}'", v));
+        let parse_i64 = |v: &str| v.parse::<i64>().map_err(|_| format!("invalid number '{}'", v));
+        let parse_u32 = |v: &str| v.parse::<u32>().map_err(|_| format!("invalid number '{}'", v));
+
+        match field {
+            "starting_citizens"    => self.starting_citizens = parse_u32(value)?,
+            "starting_food"        => self.starting_food = parse_i64(value)?,
+            "default_cap"          => self.default_cap = parse_u32(value)?,
+            "food_per_spawn"       => self.food_per_spawn = parse_i64(value)?,
+            "min_growth_interval"  => self.min_growth_interval = parse_u64(value)?,
+            "max_growth_interval"  => self.max_growth_interval = parse_u64(value)?,
+            "max_growth"           => self.max_growth = parse_u32(value)?,
+            "min_death_interval"   => self.min_death_interval = parse_u64(value)?,
+            "max_death_interval"   => self.max_death_interval = parse_u64(value)?,
+            "max_death"            => self.max_death = parse_u32(value)?,
+            "eq_drift_period"      => self.eq_drift_period = parse_u64(value)?,
+            other => return Err(format!("unknown field '{}'", other)),
+        }
+
+        // Guard against accidental min > max (which would make span roll panic).
+        if self.min_growth_interval > self.max_growth_interval {
+            return Err(format!(
+                "min_growth_interval ({}) > max_growth_interval ({})",
+                self.min_growth_interval, self.max_growth_interval));
+        }
+        if self.min_death_interval > self.max_death_interval {
+            return Err(format!(
+                "min_death_interval ({}) > max_death_interval ({})",
+                self.min_death_interval, self.max_death_interval));
+        }
+        Ok(())
+    }
+
+    pub fn to_lines(&self) -> Vec<String> {
+        vec![
+            format!("starting_citizens    = {}", self.starting_citizens),
+            format!("starting_food        = {}", self.starting_food),
+            format!("default_cap          = {}", self.default_cap),
+            format!("food_per_spawn       = {}", self.food_per_spawn),
+            format!("min_growth_interval  = {} ticks ({:.2}s)", self.min_growth_interval, self.min_growth_interval as f64 / 20.0),
+            format!("max_growth_interval  = {} ticks ({:.2}s)", self.max_growth_interval, self.max_growth_interval as f64 / 20.0),
+            format!("max_growth           = {}", self.max_growth),
+            format!("min_death_interval   = {} ticks ({:.2}s)", self.min_death_interval, self.min_death_interval as f64 / 20.0),
+            format!("max_death_interval   = {} ticks ({:.2}s)", self.max_death_interval, self.max_death_interval as f64 / 20.0),
+            format!("max_death            = {}", self.max_death),
+            format!("eq_drift_period      = {} ticks", self.eq_drift_period),
+        ]
+    }
+}
+
+// --- Sim ---
 
 #[derive(Serialize, Deserialize)]
 pub struct Sim {
@@ -55,15 +128,14 @@ pub struct Sim {
 
     pub food: i64,
     pub population_cap: u32,
+    pub tunables: Tunables,
 
-    // Alive citizens (SoA).
     pub citizen_ids: Vec<u32>,
     pub citizen_eq: Vec<f32>,
     pub next_citizen_id: u32,
     next_growth_tick: u64,
     next_death_tick: u64,
 
-    // Dead citizens (SoA). No removal from these — history stays.
     pub dead_citizen_ids: Vec<u32>,
     pub dead_citizen_eq: Vec<f32>,
     pub dead_citizen_death_tick: Vec<u64>,
@@ -76,6 +148,7 @@ struct Meta {
     tick_count: u64,
     food: i64,
     population_cap: u32,
+    tunables: Tunables,
     next_citizen_id: u32,
     next_growth_tick: u64,
     next_death_tick: u64,
@@ -118,36 +191,21 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> std::io::Result<T> {
     serde_json::from_str(&s).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
-fn derive_odd_key(seed: u64) -> u64 {
-    (stable_random(0, EVENT_ID_KEY, seed) | 1) & ID_MASK
-}
-
-fn public_code_u64(internal_id: u32, type_tag: u8, seed: u64) -> u64 {
-    let odd_key = derive_odd_key(seed);
-    let packed = ((type_tag as u64) << TYPE_SHIFT) | (internal_id as u64 & INTERNAL_MASK);
-    (packed.wrapping_mul(odd_key)) & ID_MASK
-}
-
-fn encode_code(mut n: u64, len: usize) -> String {
-    let mut out = vec![b'0'; len];
-    for i in (0..len).rev() {
-        out[i] = CROCKFORD[(n & 31) as usize];
-        n >>= 5;
-    }
-    String::from_utf8(out).expect("crockford is ascii")
-}
-
 fn quantize_eq(x: f32) -> f32 {
     (x * 100.0).round() / 100.0
 }
 
 impl Sim {
     pub fn new(world_seed: u64) -> Self {
+        Self::new_with_tunables(world_seed, Tunables::default())
+    }
+
+    pub fn new_with_tunables(world_seed: u64, tunables: Tunables) -> Self {
         let mut sim = Sim {
             world_seed,
             tick_count: 0,
-            food: STARTING_FOOD,
-            population_cap: DEFAULT_POPULATION_CAP,
+            food: tunables.starting_food,
+            population_cap: tunables.default_cap,
             citizen_ids: Vec::new(),
             citizen_eq: Vec::new(),
             next_citizen_id: 0,
@@ -156,29 +214,29 @@ impl Sim {
             dead_citizen_ids: Vec::new(),
             dead_citizen_eq: Vec::new(),
             dead_citizen_death_tick: Vec::new(),
+            tunables,
         };
-        for _ in 0..STARTING_CITIZENS {
-            sim.spawn_citizen();
+        for _ in 0..sim.tunables.starting_citizens {
+            if sim.spawn_citizen().is_none() { break; }
         }
         sim.next_growth_tick = sim.tick_count + sim.roll_growth_interval(sim.tick_count);
         sim.next_death_tick = sim.tick_count + sim.roll_death_interval(sim.tick_count);
         sim
     }
 
-    pub fn spawn_citizen(&mut self) -> u32 {
+    pub fn spawn_citizen(&mut self) -> Option<u32> {
+        if self.next_citizen_id > MAX_CITIZEN_ID {
+            return None;
+        }
         let id = self.next_citizen_id;
         self.next_citizen_id += 1;
-
         let r = stable_random(id as u64, EVENT_INITIAL_EQ, self.world_seed);
         let eq = (r % 100) as f32 / 100.0;
-
         self.citizen_ids.push(id);
         self.citizen_eq.push(eq);
-        id
+        Some(id)
     }
 
-    /// Move citizen at index `idx` to the dead columns.
-    /// Uses swap_remove so the alive arrays stay dense.
     fn kill_citizen(&mut self, idx: usize) {
         let id = self.citizen_ids.swap_remove(idx);
         let eq = self.citizen_eq.swap_remove(idx);
@@ -187,9 +245,6 @@ impl Sim {
         self.dead_citizen_death_tick.push(self.tick_count);
     }
 
-    /// Selection rule for who dies. Today: random alive citizen.
-    /// Later: replace the body with decision-based selection
-    /// (weighted by eq, age, health, etc.). Signature stays the same.
     fn roll_death_victim(&self, kill_idx: u32) -> Option<usize> {
         let n = self.citizen_ids.len();
         if n == 0 { return None; }
@@ -200,24 +255,30 @@ impl Sim {
 
     fn roll_growth_interval(&self, at_tick: u64) -> u64 {
         let r = stable_random(at_tick, EVENT_POP_INTERVAL, self.world_seed);
-        let span = MAX_GROWTH_INTERVAL - MIN_GROWTH_INTERVAL + 1;
-        MIN_GROWTH_INTERVAL + r % span
+        let span = self.tunables.max_growth_interval
+            .saturating_sub(self.tunables.min_growth_interval)
+            .saturating_add(1)
+            .max(1);
+        self.tunables.min_growth_interval + r % span
     }
 
     fn roll_death_interval(&self, at_tick: u64) -> u64 {
         let r = stable_random(at_tick, EVENT_DEATH_INTERVAL, self.world_seed);
-        let span = MAX_DEATH_INTERVAL - MIN_DEATH_INTERVAL + 1;
-        MIN_DEATH_INTERVAL + r % span
+        let span = self.tunables.max_death_interval
+            .saturating_sub(self.tunables.min_death_interval)
+            .saturating_add(1)
+            .max(1);
+        self.tunables.min_death_interval + r % span
     }
 
-    pub fn tick(&mut self) -> (u32, u32) {
+pub fn tick(&mut self) -> (u32, u32) {
     self.tick_count += 1;
     let mut died = 0u32;
 
-    // 1. Per-citizen eq drift (unchanged body)
+    // 1. Per-citizen eq drift
     for i in 0..self.citizen_ids.len() {
         let key = (self.citizen_ids[i] as u64) ^ (self.tick_count << 32);
-        if stable_random(key, EVENT_EQ_TRIGGER, self.world_seed) % EQ_DRIFT_PERIOD != 0 {
+        if stable_random(key, EVENT_EQ_TRIGGER, self.world_seed) % self.tunables.eq_drift_period.max(1) != 0 {
             continue;
         }
         let roll = stable_random(key, EVENT_EQ_DRIFT, self.world_seed) % 3;
@@ -229,7 +290,7 @@ impl Sim {
     if self.tick_count >= self.next_death_tick {
         self.next_death_tick = self.tick_count + self.roll_death_interval(self.tick_count);
         let r = stable_random(self.tick_count, EVENT_DEATH_COUNT, self.world_seed);
-        let kills = (r % (MAX_DEATH as u64 + 1)) as u32;
+        let kills = (r % (self.tunables.max_death as u64 + 1)) as u32;
         for kill_idx in 0..kills {
             if let Some(victim) = self.roll_death_victim(kill_idx) {
                 self.kill_citizen(victim);
@@ -250,21 +311,26 @@ impl Sim {
     }
 
     let r = stable_random(self.tick_count, EVENT_POP_GROWTH, self.world_seed);
-    let wanted = (r % (MAX_GROWTH as u64 + 1)) as u32;
+    let wanted = (r % (self.tunables.max_growth as u64 + 1)) as u32;
     let room = self.population_cap - alive;
-    let affordable = if self.food <= 0 { 0 } else { (self.food / FOOD_PER_SPAWN) as u32 };
+    let affordable = if self.food <= 0 || self.tunables.food_per_spawn <= 0 {
+        0
+    } else {
+        (self.food / self.tunables.food_per_spawn) as u32
+    };
     let actual = wanted.min(room).min(affordable);
 
+    let mut spawned = 0;
     for _ in 0..actual {
-        self.spawn_citizen();
+        if self.spawn_citizen().is_none() { break; }
+        spawned += 1;
     }
-    self.food -= (actual as i64) * FOOD_PER_SPAWN;
-    (actual, died)
-    }
+    self.food -= (spawned as i64) * self.tunables.food_per_spawn;
+    (spawned, died)
+}
 
     pub fn citizens(&self) -> u32 { self.citizen_ids.len() as u32 }
     pub fn dead_count(&self) -> u32 { self.dead_citizen_ids.len() as u32 }
-
     pub fn add_food(&mut self, amount: i64) { self.food += amount; }
     pub fn set_cap(&mut self, cap: u32) { self.population_cap = cap; }
 
@@ -280,12 +346,12 @@ impl Sim {
         }
     }
 
-    pub fn citizen_code(&self, i: usize) -> String {
-        encode_code(public_code_u64(self.citizen_ids[i], TYPE_CITIZEN, self.world_seed), CODE_LEN)
+    pub fn citizen_display_id(&self, i: usize) -> String {
+        format!("{:09}", self.citizen_ids[i])
     }
 
-    pub fn dead_citizen_code(&self, i: usize) -> String {
-        encode_code(public_code_u64(self.dead_citizen_ids[i], TYPE_CITIZEN, self.world_seed), CODE_LEN)
+    pub fn dead_citizen_display_id(&self, i: usize) -> String {
+        format!("{:09}", self.dead_citizen_ids[i])
     }
 
     pub fn save(&self, dir: &str) -> std::io::Result<()> {
@@ -299,6 +365,7 @@ impl Sim {
             tick_count: self.tick_count,
             food: self.food,
             population_cap: self.population_cap,
+            tunables: self.tunables.clone(),
             next_citizen_id: self.next_citizen_id,
             next_growth_tick: self.next_growth_tick,
             next_death_tick: self.next_death_tick,
@@ -337,6 +404,7 @@ impl Sim {
             tick_count: meta.tick_count,
             food: meta.food,
             population_cap: meta.population_cap,
+            tunables: meta.tunables,
             citizen_ids,
             citizen_eq,
             next_citizen_id: meta.next_citizen_id,
@@ -373,7 +441,7 @@ fn load_shards(dir: &Path) -> std::io::Result<(Vec<u32>, Vec<f32>, Vec<u64>)> {
     let mut death_tick = Vec::new();
 
     let Ok(entries) = fs::read_dir(dir) else {
-        return Ok((ids, eq, death_tick));   // missing folder = empty
+        return Ok((ids, eq, death_tick));
     };
     let mut shard_dirs: Vec<_> = entries
         .filter_map(|e| e.ok())

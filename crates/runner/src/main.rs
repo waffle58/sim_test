@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use sim::{Sim, TICKS_PER_SECOND};
 
 const SAVE_DIR: &str = "saves";
+const CONFIG_PATH: &str = "config.json";
 
 enum Command {
     New { name: String, seed: u64 },
@@ -17,6 +18,7 @@ enum Command {
     List { dead: bool },
     AddFood { amount: i64 },
     SetCap { amount: u32 },
+    Tune { field: Option<String>, value: Option<String> },
     Help,
     Quit,
     Unknown(String),
@@ -30,7 +32,23 @@ fn derive_seed_from_name(name: &str) -> u64 {
     }
     h
 }
-
+fn load_config() -> sim::Tunables {
+    match sim::Tunables::from_file(CONFIG_PATH) {
+        Ok(t) => {
+            println!("config loaded from {}", CONFIG_PATH);
+            t
+        }
+        Err(_) => {
+            let t = sim::Tunables::default();
+            if let Ok(()) = t.to_file(CONFIG_PATH) {
+                println!("no config at {}, wrote defaults", CONFIG_PATH);
+            } else {
+                println!("no config at {}, using defaults (could not write)", CONFIG_PATH);
+            }
+            t
+        }
+    }
+}
 fn parse_command(line: &str) -> Command {
     let mut parts = line.split_whitespace();
     let Some(head) = parts.next() else {
@@ -64,6 +82,11 @@ fn parse_command(line: &str) -> Command {
         },
         "help" | "?" => Command::Help,
         "quit" | "exit" | "q" => Command::Quit,
+        "tune" => {
+        let field = parts.next().map(|s| s.to_string());
+        let value = parts.next().map(|s| s.to_string());
+        Command::Tune { field, value }
+        }
         other => Command::Unknown(other.to_string()),
     }
 }
@@ -113,6 +136,8 @@ fn print_help() {
     println!("  add food <n>           add n to the food stockpile");
     println!("  cap <n>                set population cap to n");
     println!("  help                   this list");
+    println!("  tune                   show current world's tunables");
+    println!("  tune <field> <value>   modify a tunable live");
     println!("  quit                   exit");
 }
 
@@ -134,6 +159,7 @@ fn main() {
     let mut sim: Option<Sim> = None;
     let mut current_name: Option<String> = None;
     let mut paused = false;
+    let config = load_config();
 
     loop {
         let mut quit = false;
@@ -147,9 +173,9 @@ fn main() {
                             if let Err(e) = validate_save_name(&name) {
                                 eprintln!("{}", e);
                             } else {
-                                let s = Sim::new(seed);
+                                let s = Sim::new_with_tunables(seed, config.clone());
                                 println!("new '{}' (seed {}), alive={} food={}",
-                                         name, seed, s.citizens(), s.food);
+                                        name, seed, s.citizens(), s.food);
                                 sim = Some(s);
                                 current_name = Some(name);
                                 paused = false;
@@ -205,18 +231,34 @@ fn main() {
                                     for i in 0..s.dead_count() as usize {
                                         let d = s.dead_citizen(i);
                                         println!("  {} eq={:.2} died_t={}",
-                                                 s.dead_citizen_code(i), d.eq, d.death_tick);
+                                                 s.dead_citizen_display_id(i), d.eq, d.death_tick);
                                     }
                                 } else {
                                     println!("{} alive citizens in '{}':",
                                              s.citizens(), current_name.as_deref().unwrap_or("?"));
                                     for i in 0..s.citizens() as usize {
                                         let c = s.citizen(i);
-                                        println!("  {} eq={:.2}", s.citizen_code(i), c.eq);
+                                        println!("  {} eq={:.2}", s.citizen_display_id(i), c.eq);
                                     }
                                 }
                             }
                             None => eprintln!("no world loaded"),
+                        },
+                        Command::Tune { field, value } => match (&mut sim, field, value) {
+                            (Some(s), None, _) => {
+                                println!("tunables for '{}':", current_name.as_deref().unwrap_or("?"));
+                                for line in s.tunables.to_lines() {
+                                    println!("  {}", line);
+                                }
+                            }
+                            (Some(s), Some(f), Some(v)) => {
+                                match s.tunables.set_field(&f, &v) {
+                                    Ok(()) => println!("set {} = {} (live, next event uses new value)", f, v),
+                                    Err(e) => eprintln!("{}", e),
+                                }
+                            }
+                            (Some(_), Some(f), None) => eprintln!("usage: tune {} <value>", f),
+                            (None, _, _) => eprintln!("no world loaded"),
                         },
                         Command::AddFood { amount } => match &mut sim {
                             Some(s) => {

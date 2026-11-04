@@ -1,0 +1,13 @@
+{
+  "starting_citizens": 2000,
+  "starting_food": 100000000,
+  "default_cap": 999999999,
+  "food_per_spawn": 1,
+  "min_growth_interval": 5,
+  "max_growth_interval": 10,
+  "max_growth": 1000,
+  "min_death_interval": 6,
+  "max_death_interval": 10,
+  "max_death": 1000,
+  "eq_drift_period": 17
+}

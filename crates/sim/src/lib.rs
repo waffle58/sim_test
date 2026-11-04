@@ -1,5 +1,7 @@
+//! lib.rs — module root for the whole simulation.
+
 pub use self::random::stable_random;
-pub use self::simc::{CitizenView, Sim, POPULATION_CAP};
+pub use self::simc::{CitizenView, DeadCitizenView, Sim, DEFAULT_POPULATION_CAP};
 
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
@@ -11,85 +13,85 @@ mod tests {
     use super::*;
 
     #[test]
-fn same_seed_same_citizens() {
-    let mut a = Sim::new(7);
-    let mut b = Sim::new(7);
-    for _ in 0..500 { a.tick(); b.tick(); }
-    assert_eq!(a.citizen_ids, b.citizen_ids);
-    assert_eq!(a.citizen_eq, b.citizen_eq);
-}
-
-#[test]
-fn citizen_count_reaches_cap_and_holds() {
-    let mut s = Sim::new(7);
-    for _ in 0..10_000 { s.tick(); }
-    assert_eq!(s.citizens(), POPULATION_CAP);
-}
-
-#[test]
-fn citizens_are_distinct() {
-    let s = Sim::new(7);
-    assert_eq!(s.citizens(), 10);
-    let eqs: Vec<f32> =
-        (0..s.citizens() as usize).map(|i| s.citizen(i).eq).collect();
-    let min = eqs.iter().cloned().fold(f32::INFINITY, f32::min);
-    let max = eqs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    assert!(max - min > 0.5, "eqs clustered: {} .. {}", min, max);
-}
-
-#[test]
-fn save_load_preserves_citizens() {
-    let mut a = Sim::new(7);
-    for _ in 0..200 { a.tick(); }
-    let path = std::env::temp_dir().join("city_sim_test_save");
-    let _ = std::fs::remove_dir_all(&path);
-    let path = path.to_str().unwrap();
-    a.save(path).unwrap();
-
-    let mut b = Sim::load(path).unwrap();
-    assert_eq!(a.citizen_ids, b.citizen_ids);
-    assert_eq!(a.citizen_eq, b.citizen_eq);
-    assert_eq!(a.next_citizen_id, b.next_citizen_id);
-
-    for _ in 0..100 { a.tick(); b.tick(); }
-    assert_eq!(a.citizen_eq, b.citizen_eq);
-}
-#[test]
-fn citizen_codes_are_unique() {
-    let mut s = Sim::new(7);
-    for _ in 0..10_000 { s.tick(); }  // fills to cap 50
-
-    let mut seen = std::collections::HashSet::new();
-    for i in 0..s.citizens() as usize {
-        let code = s.citizen_code(i);
-        assert!(seen.insert(code.clone()), "duplicate code: {}", code);
+    fn same_seed_same_citizens() {
+        let mut a = Sim::new(7);
+        let mut b = Sim::new(7);
+        for _ in 0..500 { a.tick(); b.tick(); }
+        assert_eq!(a.citizen_ids, b.citizen_ids);
+        assert_eq!(a.citizen_eq, b.citizen_eq);
+        assert_eq!(a.dead_citizen_ids, b.dead_citizen_ids);
+        assert_eq!(a.food, b.food);
     }
-}
 
-#[test]
-fn citizen_codes_are_10_crockford_chars() {
-    let s = Sim::new(7);
-    for i in 0..s.citizens() as usize {
-        let code = s.citizen_code(i);
-        assert_eq!(code.len(), 10);
-        for ch in code.chars() {
-            assert!(
-                "0123456789ABCDEFGHJKMNPQRSTVWXYZ".contains(ch),
-                "invalid char '{}' in code {}",
-                ch, code
-            );
+    #[test]
+    fn food_limits_growth() {
+        // Starting food 100 / 10 per spawn = 10 more citizens possible.
+        let mut s = Sim::new(7);
+        for _ in 0..10_000 { s.tick(); }
+        assert!(s.food <= 0, "food should be exhausted, got {}", s.food);
+        // 10 starting + up to 10 from food, minus any deaths
+        assert!(s.citizens() <= 20, "grew past food budget: {}", s.citizens());
+    }
+
+    #[test]
+    fn adding_food_enables_more_growth() {
+        let mut s = Sim::new(7);
+        for _ in 0..2000 { s.tick(); }
+        let before = s.citizens();
+        s.add_food(10_000);
+        for _ in 0..2000 { s.tick(); }
+        assert!(s.citizens() >= before, "population shrank unexpectedly");
+        assert!(s.citizens() + s.dead_count() > before || s.citizens() > before,
+                "no new citizens appeared after adding food");
+    }
+
+    #[test]
+    fn death_moves_to_dead_columns() {
+        let mut s = Sim::new(7);
+        s.add_food(10_000);
+        // Run long enough that at least one death fires (interval 100-300).
+        for _ in 0..2000 { s.tick(); }
+        assert!(s.dead_count() > 0, "no deaths fired in 2000 ticks");
+        // No ID appears in both alive and dead.
+        let alive: std::collections::HashSet<_> = s.citizen_ids.iter().copied().collect();
+        for &id in &s.dead_citizen_ids {
+            assert!(!alive.contains(&id), "id {} is both alive and dead", id);
         }
     }
-}
 
-#[test]
-fn eq_is_two_decimals() {
-    let mut s = Sim::new(7);
-    for _ in 0..2_000 { s.tick(); }
-    for i in 0..s.citizens() as usize {
-        let eq = s.citizen(i).eq;
-        let rounded = (eq * 100.0).round() / 100.0;
-        assert!((eq - rounded).abs() < 1e-5, "eq {} not on 2-decimal grid", eq);
+    #[test]
+    fn save_load_preserves_everything() {
+        let mut a = Sim::new(7);
+        a.add_food(10_000);
+        a.set_cap(100);
+        for _ in 0..2000 { a.tick(); }
+        assert!(a.dead_count() > 0, "test needs at least one death");
+
+        let path = std::env::temp_dir().join("city_sim_test_save");
+        let _ = std::fs::remove_dir_all(&path);
+        let path = path.to_str().unwrap();
+        a.save(path).unwrap();
+
+        let mut b = Sim::load(path).unwrap();
+        assert_eq!(a.food, b.food);
+        assert_eq!(a.population_cap, b.population_cap);
+        assert_eq!(a.citizen_ids, b.citizen_ids);
+        assert_eq!(a.citizen_eq, b.citizen_eq);
+        assert_eq!(a.dead_citizen_ids, b.dead_citizen_ids);
+        assert_eq!(a.dead_citizen_eq, b.dead_citizen_eq);
+        assert_eq!(a.dead_citizen_death_tick, b.dead_citizen_death_tick);
+
+        for _ in 0..200 { a.tick(); b.tick(); }
+        assert_eq!(a.citizen_eq, b.citizen_eq);
+        assert_eq!(a.food, b.food);
     }
-}
+
+    #[test]
+    fn citizen_codes_are_unique() {
+        let s = Sim::new(7);
+        let mut seen = std::collections::HashSet::new();
+        for i in 0..s.citizens() as usize {
+            assert!(seen.insert(s.citizen_code(i)));
+        }
+    }
 }

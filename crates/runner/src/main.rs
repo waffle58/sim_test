@@ -60,7 +60,7 @@ fn parse_command(line: &str) -> Command {
 }
 
 fn save_path(name: &str) -> PathBuf {
-    PathBuf::from(SAVE_DIR).join(format!("{name}.save"))
+    PathBuf::from(SAVE_DIR).join(name)   // was: .join(format!("{name}.save"))
 }
 
 fn validate_save_name(name: &str) -> Result<(), String> {
@@ -199,15 +199,14 @@ fn main() {
                             _ => println!("no world loaded"),
                         },
                         Command::List => match &sim {
-                        Some(s) => {
-                            println!("{} citizens in '{}':",
-                                s.citizens(), current_name.as_deref().unwrap_or("?"));
-                            for i in 0..s.citizens() as usize {
-                                let c = s.citizen(i);
-                                println!("  #{:<3} cap={:.3} next=t{}",
-                            c.id, c.capability, c.next_decision);
+                            Some(s) => {
+                                println!("{} citizens in '{}':",
+                                        s.citizens(), current_name.as_deref().unwrap_or("?"));
+                                for i in 0..s.citizens() as usize {
+                                    let c = s.citizen(i);
+                                    println!("  {} eq={:.2}", s.citizen_code(i), c.eq);
+                                }
                             }
-                        }
                             None => eprintln!("no world loaded"),
                         },
                         Command::Unknown(w) => eprintln!("unknown command '{}' (try 'help')", w),

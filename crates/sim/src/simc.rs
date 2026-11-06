@@ -19,7 +19,6 @@ pub const MAX_CITIZEN_ID: u32 = 999_999_999;
 const SAVE_VERSION: u32 = 4;
 const CITIZENS_PER_SHARD: usize = 10_000;
 
-// --- Tunables: everything you might want to change for pacing/feel ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tunables {
@@ -355,10 +354,14 @@ pub fn tick(&mut self) -> (u32, u32) {
     }
 
     pub fn save(&self, dir: &str) -> std::io::Result<()> {
-        let root = Path::new(dir);
-        let _ = fs::remove_dir_all(root);
-        fs::create_dir_all(root)?;
+        let final_path = Path::new(dir);
+        let tmp_path = final_path.with_extension("tmp");
 
+        // Wipe any leftover temp dir from a previous crashed save.
+        let _ = fs::remove_dir_all(&tmp_path);
+        fs::create_dir_all(&tmp_path)?;
+
+        // ---- meta.json ----
         let meta = Meta {
             version: SAVE_VERSION,
             world_seed: self.world_seed,
@@ -370,20 +373,28 @@ pub fn tick(&mut self) -> (u32, u32) {
             next_growth_tick: self.next_growth_tick,
             next_death_tick: self.next_death_tick,
         };
-        write_json(&root.join("meta.json"), &meta)?;
+        write_json(&tmp_path.join("meta.json"), &meta)?;
 
-        let citizens_dir = root.join("citizens");
+        // ---- shards ----
+        let citizens_dir = tmp_path.join("citizens");
         let alive_dir = citizens_dir.join("alive");
         let dead_dir = citizens_dir.join("dead");
         fs::create_dir_all(&alive_dir)?;
         fs::create_dir_all(&dead_dir)?;
 
         save_shards(&alive_dir, &self.citizen_ids, &self.citizen_eq, None)?;
-        save_shards(&dead_dir, &self.dead_citizen_ids, &self.dead_citizen_eq,
-                    Some(&self.dead_citizen_death_tick))?;
+        save_shards(
+            &dead_dir,
+            &self.dead_citizen_ids,
+            &self.dead_citizen_eq,
+            Some(&self.dead_citizen_death_tick),
+        )?;
+
+        // ---- atomic swap: old save survives until this line ----
+        let _ = fs::remove_dir_all(final_path);
+        fs::rename(&tmp_path, final_path)?;
         Ok(())
     }
-
     pub fn load(dir: &str) -> std::io::Result<Self> {
         let root = Path::new(dir);
         let meta: Meta = read_json(&root.join("meta.json"))?;
@@ -397,7 +408,22 @@ pub fn tick(&mut self) -> (u32, u32) {
         let citizens_dir = root.join("citizens");
         let (citizen_ids, citizen_eq, _) = load_shards(&citizens_dir.join("alive"))?;
         let (dead_citizen_ids, dead_citizen_eq, dead_citizen_death_tick) =
-            load_shards(&citizens_dir.join("dead"))?;
+        load_shards(&citizens_dir.join("dead"))?;
+        let n = citizen_ids.len();
+        if citizen_eq.len() != n {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("alive columns mismatched: ids={} eq={}", n, citizen_eq.len()),
+            ));
+        }
+        let nd = dead_citizen_ids.len();
+        if dead_citizen_eq.len() != nd || dead_citizen_death_tick.len() != nd {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("dead columns mismatched: ids={} eq={} tick={}",
+                        nd, dead_citizen_eq.len(), dead_citizen_death_tick.len()),
+            ));
+        }
 
         Ok(Sim {
             world_seed: meta.world_seed,

@@ -7,6 +7,7 @@ use sim::{Sim, TICKS_PER_SECOND};
 
 const SAVE_DIR: &str = "saves";
 const CONFIG_PATH: &str = "config.json";
+const MAX_CATCH_UP: u32 = 5;
 
 enum Command {
     New { name: String, seed: u64 },
@@ -291,15 +292,36 @@ fn main() {
             Some(s) if !paused => {
                 leftover += now - last;
                 last = now;
-                while leftover >= tick_len {
+
+                let mut catch_up: u32 = 0;
+                while leftover >= tick_len && catch_up < MAX_CATCH_UP {
+                    let tick_start = Instant::now();
                     let (gained, died) = s.tick();
+                    let tick_elapsed = tick_start.elapsed();
+
+                    if tick_elapsed > tick_len {
+                        println!(
+                            "warning: tick {} took {} ms (> {} ms budget)",
+                            s.tick_count,
+                            tick_elapsed.as_millis(),
+                            tick_len.as_millis(),
+                        );
+                    }
                     if gained > 0 {
                         println!("+{} -> alive={} food={}", gained, s.citizens(), s.food);
                     }
                     if died > 0 {
-                       println!("-{} -> dead={} alive={}", died, s.dead_count(), s.citizens());
+                        println!("-{} -> dead={} alive={}", died, s.dead_count(), s.citizens());
                     }
+
                     leftover -= tick_len;
+                    catch_up += 1;
+                }
+
+                let backlog_limit = tick_len * 10;
+                if leftover > backlog_limit {
+                    println!("warning: dropped {} ms of backlog", leftover.as_millis());
+                    leftover = Duration::ZERO;
                 }
             }
             _ => {

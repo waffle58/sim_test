@@ -1,5 +1,3 @@
-//! lib.rs — module root for the whole simulation.
-
 pub use self::random::stable_random;
 pub use self::simc::{CitizenView, DeadCitizenView, Sim, Tunables};
 

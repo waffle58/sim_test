@@ -215,11 +215,11 @@ fn main() {
                             if sim.is_some() { paused = false; println!("resumed"); }
                             else { eprintln!("no world loaded"); }
                         }
-                        Command::Status => match (&sim, &current_name) {
+                       Command::Status => match (&sim, &current_name) {
                             (Some(s), Some(name)) => println!(
-                                "'{}' seed={} alive={}/{} dead={} food={} t={} {}",
+                                "'{}' seed={} alive={}/{} dead={} (lifetime {}) food={} t={} {}",
                                 name, s.world_seed, s.citizens(), s.population_cap,
-                                s.dead_count(), s.food, s.tick_count,
+                                s.dead_count(), s.total_deaths(), s.food, s.tick_count,
                                 if paused { "(paused)" } else { "(running)" }
                             ),
                             _ => println!("no world loaded"),

@@ -1,10 +1,10 @@
 pub use self::random::stable_random;
-pub use self::simc::{CitizenView, DeadCitizenView, Sim, Tunables};
+pub use self::sim::{CitizenView, DeadCitizenView, Sim, Tunables};
 
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
 mod random;
-mod simc;
+mod sim;
 
 #[cfg(test)]
 mod tests {

@@ -16,7 +16,7 @@ const EVENT_DEATH_INTERVAL: u64 = 6;
 const EVENT_DEATH_COUNT: u64 = 7;
 const EVENT_DEATH_PICK: u64 = 8;
 pub const MAX_CITIZEN_ID: u32 = 999_999_999;
-const SAVE_VERSION: u32 = 4;
+const SAVE_VERSION: u32 = 5;
 const CITIZENS_PER_SHARD: usize = 10_000;
 
 
@@ -33,6 +33,7 @@ pub struct Tunables {
     pub max_death_interval: u64,
     pub max_death: u32,
     pub eq_drift_period: u64,
+    pub max_dead_retained: u32,
 }
 
 impl Default for Tunables {
@@ -49,6 +50,7 @@ impl Default for Tunables {
             max_death_interval: 105,
             max_death: 2,
             eq_drift_period: 17,
+            max_dead_retained: 10_000,
         }
     }
 }
@@ -84,6 +86,7 @@ impl Tunables {
             "max_death_interval"   => self.max_death_interval = parse_u64(value)?,
             "max_death"            => self.max_death = parse_u32(value)?,
             "eq_drift_period"      => self.eq_drift_period = parse_u64(value)?,
+            "max_dead_retained"    => self.max_dead_retained = parse_u32(value)?,
             other => return Err(format!("unknown field '{}'", other)),
         }
 
@@ -114,6 +117,7 @@ impl Tunables {
             format!("max_death_interval   = {} ticks ({:.2}s)", self.max_death_interval, self.max_death_interval as f64 / 20.0),
             format!("max_death            = {}", self.max_death),
             format!("eq_drift_period      = {} ticks", self.eq_drift_period),
+            format!("max_dead_retained   = {}", self.max_dead_retained),
         ]
     }
 }
@@ -138,6 +142,7 @@ pub struct Sim {
     pub dead_citizen_ids: Vec<u32>,
     pub dead_citizen_eq: Vec<f32>,
     pub dead_citizen_death_tick: Vec<u64>,
+    pub total_deaths: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -151,6 +156,7 @@ struct Meta {
     next_citizen_id: u32,
     next_growth_tick: u64,
     next_death_tick: u64,
+    total_deaths: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -213,6 +219,7 @@ impl Sim {
             dead_citizen_ids: Vec::new(),
             dead_citizen_eq: Vec::new(),
             dead_citizen_death_tick: Vec::new(),
+            total_deaths: 0,
             tunables,
         };
         for _ in 0..sim.tunables.starting_citizens {
@@ -235,15 +242,26 @@ impl Sim {
         self.citizen_eq.push(eq);
         Some(id)
     }
-
     fn kill_citizen(&mut self, idx: usize) {
         let id = self.citizen_ids.swap_remove(idx);
         let eq = self.citizen_eq.swap_remove(idx);
         self.dead_citizen_ids.push(id);
         self.dead_citizen_eq.push(eq);
         self.dead_citizen_death_tick.push(self.tick_count);
+        self.total_deaths += 1;
+        self.cull_dead();
     }
 
+    fn cull_dead(&mut self) {
+        let cap = self.tunables.max_dead_retained as usize;
+        if cap == 0 || self.dead_citizen_ids.len() <= cap {
+            return;
+        }
+        let trim = (cap / 10).max(1);
+        self.dead_citizen_ids.drain(0..trim);
+        self.dead_citizen_eq.drain(0..trim);
+        self.dead_citizen_death_tick.drain(0..trim);
+    }
     fn roll_death_victim(&self, kill_idx: u32) -> Option<usize> {
         let n = self.citizen_ids.len();
         if n == 0 { return None; }
@@ -330,6 +348,7 @@ pub fn tick(&mut self) -> (u32, u32) {
 
     pub fn citizens(&self) -> u32 { self.citizen_ids.len() as u32 }
     pub fn dead_count(&self) -> u32 { self.dead_citizen_ids.len() as u32 }
+    pub fn total_deaths(&self) -> u64 { self.total_deaths }
     pub fn add_food(&mut self, amount: i64) { self.food += amount; }
     pub fn set_cap(&mut self, cap: u32) { self.population_cap = cap; }
 
@@ -372,6 +391,7 @@ pub fn tick(&mut self) -> (u32, u32) {
             next_citizen_id: self.next_citizen_id,
             next_growth_tick: self.next_growth_tick,
             next_death_tick: self.next_death_tick,
+            total_deaths: self.total_deaths,
         };
         write_json(&tmp_path.join("meta.json"), &meta)?;
 
@@ -439,6 +459,7 @@ pub fn tick(&mut self) -> (u32, u32) {
             dead_citizen_ids,
             dead_citizen_eq,
             dead_citizen_death_tick,
+            total_deaths: meta.total_deaths,
         })
     }
 }

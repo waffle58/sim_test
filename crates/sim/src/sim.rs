@@ -316,6 +316,7 @@ impl Sim {
             surname: derive_surname(id, self.world_seed),
         });
     }
+    
     if let Some(i) = self.dead_civ_ids.iter().position(|&c| c == id) {
         let female = derive_gender(id, self.world_seed);
         return Some(InspectView {
@@ -332,6 +333,62 @@ impl Sim {
     }
     None
 }
+    pub fn population_stats(&self) -> PopStats {
+        let n = self.civ_ids.len();
+        if n == 0 {
+            return PopStats {
+                total: 0, female: 0, male: 0,
+                eq_mean: 0.0, eq_min: 0.0, eq_max: 0.0, eq_mode: 0.0,
+                aptitude_mean: 0.0, aptitude_min: 0.0, aptitude_max: 0.0, aptitude_mode: 0.0,
+            };
+        }
+
+        let mut female: u32 = 0;
+        let mut eq_sum: f64 = 0.0;
+        let mut eq_min = f32::INFINITY;
+        let mut eq_max = f32::NEG_INFINITY;
+        let mut eq_buckets = [0u32; 101];
+
+        let mut apt_sum: f64 = 0.0;
+        let mut apt_min = f32::INFINITY;
+        let mut apt_max = f32::NEG_INFINITY;
+        let mut apt_buckets = [0u32; 101];
+
+        for i in 0..n {
+            if self.civ_female[i] { female += 1; }
+
+            let eq = self.civ_eq[i];
+            eq_sum += eq as f64;
+            if eq < eq_min { eq_min = eq; }
+            if eq > eq_max { eq_max = eq; }
+            eq_buckets[((eq * 100.0).round() as usize).min(100)] += 1;
+
+            let apt = self.civ_aptitude[i];
+            apt_sum += apt as f64;
+            if apt < apt_min { apt_min = apt; }
+            if apt > apt_max { apt_max = apt; }
+            apt_buckets[((apt * 100.0).round() as usize).min(100)] += 1;
+        }
+
+        let eq_mode_bucket = eq_buckets.iter().enumerate()
+            .max_by_key(|(_, &c)| c).map(|(i, _)| i).unwrap_or(0);
+        let apt_mode_bucket = apt_buckets.iter().enumerate()
+            .max_by_key(|(_, &c)| c).map(|(i, _)| i).unwrap_or(0);
+
+        PopStats {
+            total: n as u32,
+            female,
+            male: n as u32 - female,
+            eq_mean: (eq_sum / n as f64) as f32,
+            eq_min,
+            eq_max,
+            eq_mode: eq_mode_bucket as f32 / 100.0,
+            aptitude_mean: (apt_sum / n as f64) as f32,
+            aptitude_min: apt_min,
+            aptitude_max: apt_max,
+            aptitude_mode: apt_mode_bucket as f32 / 100.0,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Civ {
@@ -355,4 +412,17 @@ pub struct InspectView {
     pub aptitude: f32,
     pub given_name: &'static str,
     pub surname: &'static str,
+}
+pub struct PopStats {
+    pub total: u32,
+    pub female: u32,
+    pub male: u32,
+    pub eq_mean: f32,
+    pub eq_min: f32,
+    pub eq_max: f32,
+    pub eq_mode: f32,
+    pub aptitude_mean: f32,
+    pub aptitude_min: f32,
+    pub aptitude_max: f32,
+    pub aptitude_mode: f32,
 }

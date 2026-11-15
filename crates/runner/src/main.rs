@@ -37,6 +37,7 @@ enum Command {
     Inspect { 
         id: u32 
     },
+    Stats,
     Help,
     Quit,
     Unknown(String),
@@ -114,6 +115,7 @@ fn parse_command(line: &str) -> Command {
                 _ => Command::Unknown(format!("inspect {}", raw)),
             }
         }
+        "stats" => Command::Stats,
         "help" | "?" => Command::Help,
         "quit" | "exit" | "q" => Command::Quit,
         "tune" => {
@@ -185,6 +187,7 @@ fn print_help() {
     println!("  add food <n>           add n to the food stockpile");
     println!("  cap <n>                set population cap to n");
     println!("  inspect <id>           show one citizen (9-digit or plain id)");
+    println!("  stats                  population breakdown: gender, eq, aptitude");
     println!("  help                   this list");
     println!("  tune                   show current world's tunables");
     println!("  tune <field> <value>   modify a tunable live");
@@ -304,6 +307,22 @@ fn main() {
                                 if paused { "(paused)" } else { "(running)" }
                             ),
                             _ => println!("no world loaded"),
+                        },
+                        Command::Stats => match &sim {
+                            Some(s) => {
+                                let st = s.population_stats();
+                                if st.total == 0 {
+                                    println!("no alive citizens");
+                                } else {
+                                    println!("population {} (♀{} ♂{})", st.total, st.female, st.male);
+                                    println!("  eq        mean={:.2} mode={:.2} min={:.2} max={:.2}",
+                                            st.eq_mean, st.eq_mode, st.eq_min, st.eq_max);
+                                    println!("  aptitude  mean={:.2} mode={:.2} min={:.2} max={:.2}",
+                                            st.aptitude_mean, st.aptitude_mode, st.aptitude_min, st.aptitude_max);
+                                    println!("  dead      {} (lifetime {})", s.dead_civs(), s.total_deaths());
+                                }
+                            }
+                            None => eprintln!("no world loaded"),
                         },
                         Command::List { dead } => match &sim {
                             Some(s) => {

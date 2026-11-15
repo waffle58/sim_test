@@ -10,6 +10,7 @@ pub use self::sim::{
     Civ,
     DeadCiv, 
     InspectView, 
+    PopStats,
     Sim
 };
 pub use self::tunables::Tunables;

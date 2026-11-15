@@ -10,16 +10,30 @@ const CONFIG_PATH: &str = "config.json";
 const MAX_CATCH_UP: u32 = 5;
 
 enum Command {
-    New { name: String, seed: u64 },
-    Load { name: String },
+    New {
+        name: String,
+        seed: u64,
+    },
+    Load {
+        name: String,
+    },
     Save,
     Pause,
     Resume,
     Status,
-    List { dead: bool },
-    AddFood { amount: i64 },
-    SetCap { amount: u32 },
-    Tune { field: Option<String>, value: Option<String> },
+    List {
+        dead: bool,
+    },
+    AddFood {
+        amount: i64,
+    },
+    SetCap {
+        amount: u32,
+    },
+    Tune {
+        field: Option<String>,
+        value: Option<String>,
+    },
     Help,
     Quit,
     Unknown(String),
@@ -44,7 +58,10 @@ fn load_config() -> sim::Tunables {
             if let Ok(()) = t.to_file(CONFIG_PATH) {
                 println!("no config at {}, wrote defaults", CONFIG_PATH);
             } else {
-                println!("no config at {}, using defaults (could not write)", CONFIG_PATH);
+                println!(
+                    "no config at {}, using defaults (could not write)",
+                    CONFIG_PATH
+                );
             }
             t
         }
@@ -58,7 +75,9 @@ fn parse_command(line: &str) -> Command {
     match head.to_ascii_lowercase().as_str() {
         "new" => {
             let name = parts.next().unwrap_or("world").to_string();
-            let seed = parts.next().and_then(|s| s.parse().ok())
+            let seed = parts
+                .next()
+                .and_then(|s| s.parse().ok())
                 .unwrap_or_else(|| derive_seed_from_name(&name));
             Command::New { name, seed }
         }
@@ -69,7 +88,9 @@ fn parse_command(line: &str) -> Command {
         "pause" => Command::Pause,
         "resume" | "play" => Command::Resume,
         "status" => Command::Status,
-        "list" | "ls" => Command::List { dead: parts.next() == Some("dead") },
+        "list" | "ls" => Command::List {
+            dead: parts.next() == Some("dead"),
+        },
         "add" => {
             let what = parts.next();
             let amount = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -84,9 +105,9 @@ fn parse_command(line: &str) -> Command {
         "help" | "?" => Command::Help,
         "quit" | "exit" | "q" => Command::Quit,
         "tune" => {
-        let field = parts.next().map(|s| s.to_string());
-        let value = parts.next().map(|s| s.to_string());
-        Command::Tune { field, value }
+            let field = parts.next().map(|s| s.to_string());
+            let value = parts.next().map(|s| s.to_string());
+            Command::Tune { field, value }
         }
         other => Command::Unknown(other.to_string()),
     }
@@ -97,12 +118,23 @@ fn save_path(name: &str) -> PathBuf {
 }
 
 fn validate_save_name(name: &str) -> Result<(), String> {
-    if name.is_empty() { return Err("save name is empty".into()); }
-    if name.len() > 32 { return Err("save name is longer than 32 characters".into()); }
-    if name == "." || name == ".." { return Err("'.' and '..' are not valid save names".into()); }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if name.is_empty() {
+        return Err("save name is empty".into());
+    }
+    if name.len() > 32 {
+        return Err("save name is longer than 32 characters".into());
+    }
+    if name == "." || name == ".." {
+        return Err("'.' and '..' are not valid save names".into());
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return Err(format!(
-            "save name '{}' contains invalid characters (use letters, digits, _ or -)", name));
+            "save name '{}' contains invalid characters (use letters, digits, _ or -)",
+            name
+        ));
     }
     Ok(())
 }
@@ -113,7 +145,11 @@ fn spawn_input_thread() -> Receiver<String> {
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
             match line {
-                Ok(l) => if tx.send(l).is_err() { break; },
+                Ok(l) => {
+                    if tx.send(l).is_err() {
+                        break;
+                    }
+                }
                 Err(_) => break,
             }
         }
@@ -168,15 +204,23 @@ fn main() {
             match commands.try_recv() {
                 Ok(line) => {
                     match parse_command(&line) {
-                        Command::Quit => { quit = true; break; }
+                        Command::Quit => {
+                            quit = true;
+                            break;
+                        }
                         Command::Help => print_help(),
                         Command::New { name, seed } => {
                             if let Err(e) = validate_save_name(&name) {
                                 eprintln!("{}", e);
                             } else {
                                 let s = Sim::new_with_tunables(seed, config.clone());
-                                println!("new '{}' (seed {}), alive={} food={}",
-                                        name, seed, s.citizens(), s.food);
+                                println!(
+                                    "new '{}' (seed {}), alive={} food={}",
+                                    name,
+                                    seed,
+                                    s.citizens(),
+                                    s.food
+                                );
                                 sim = Some(s);
                                 current_name = Some(name);
                                 paused = false;
@@ -188,8 +232,14 @@ fn main() {
                             } else {
                                 match Sim::load(save_path(&name).to_str().unwrap()) {
                                     Ok(s) => {
-                                        println!("loaded '{}', alive={} dead={} food={} t={}",
-                                                 name, s.citizens(), s.dead_count(), s.food, s.tick_count);
+                                        println!(
+                                            "loaded '{}', alive={} dead={} food={} t={}",
+                                            name,
+                                            s.citizens(),
+                                            s.dead_count(),
+                                            s.food,
+                                            s.tick_count
+                                        );
                                         sim = Some(s);
                                         current_name = Some(name);
                                         paused = false;
@@ -201,25 +251,43 @@ fn main() {
                         Command::Save => match (&sim, &current_name) {
                             (Some(s), Some(name)) => {
                                 match s.save(save_path(name).to_str().unwrap()) {
-                                    Ok(()) => println!("saved '{}' -> {}", name, save_path(name).display()),
+                                    Ok(()) => println!(
+                                        "saved '{}' -> {}",
+                                        name,
+                                        save_path(name).display()
+                                    ),
                                     Err(e) => eprintln!("save failed: {e}"),
                                 }
                             }
                             _ => eprintln!("no world loaded"),
                         },
                         Command::Pause => {
-                            if sim.is_some() { paused = true; println!("paused"); }
-                            else { eprintln!("no world loaded"); }
+                            if sim.is_some() {
+                                paused = true;
+                                println!("paused");
+                            } else {
+                                eprintln!("no world loaded");
+                            }
                         }
                         Command::Resume => {
-                            if sim.is_some() { paused = false; println!("resumed"); }
-                            else { eprintln!("no world loaded"); }
+                            if sim.is_some() {
+                                paused = false;
+                                println!("resumed");
+                            } else {
+                                eprintln!("no world loaded");
+                            }
                         }
-                       Command::Status => match (&sim, &current_name) {
+                        Command::Status => match (&sim, &current_name) {
                             (Some(s), Some(name)) => println!(
                                 "'{}' seed={} alive={}/{} dead={} (lifetime {}) food={} t={} {}",
-                                name, s.world_seed, s.citizens(), s.population_cap,
-                                s.dead_count(), s.total_deaths(), s.food, s.tick_count,
+                                name,
+                                s.world_seed,
+                                s.citizens(),
+                                s.population_cap,
+                                s.dead_count(),
+                                s.total_deaths(),
+                                s.food,
+                                s.tick_count,
                                 if paused { "(paused)" } else { "(running)" }
                             ),
                             _ => println!("no world loaded"),
@@ -227,16 +295,26 @@ fn main() {
                         Command::List { dead } => match &sim {
                             Some(s) => {
                                 if dead {
-                                    println!("{} dead citizens in '{}':",
-                                             s.dead_count(), current_name.as_deref().unwrap_or("?"));
+                                    println!(
+                                        "{} dead citizens in '{}':",
+                                        s.dead_count(),
+                                        current_name.as_deref().unwrap_or("?")
+                                    );
                                     for i in 0..s.dead_count() as usize {
                                         let d = s.dead_citizen(i);
-                                        println!("  {} eq={:.2} died_t={}",
-                                                 s.dead_citizen_display_id(i), d.eq, d.death_tick);
+                                        println!(
+                                            "  {} eq={:.2} died_t={}",
+                                            s.dead_citizen_display_id(i),
+                                            d.eq,
+                                            d.death_tick
+                                        );
                                     }
                                 } else {
-                                    println!("{} alive citizens in '{}':",
-                                             s.citizens(), current_name.as_deref().unwrap_or("?"));
+                                    println!(
+                                        "{} alive citizens in '{}':",
+                                        s.citizens(),
+                                        current_name.as_deref().unwrap_or("?")
+                                    );
                                     for i in 0..s.citizens() as usize {
                                         let c = s.citizen(i);
                                         println!("  {} eq={:.2}", s.citizen_display_id(i), c.eq);
@@ -247,17 +325,20 @@ fn main() {
                         },
                         Command::Tune { field, value } => match (&mut sim, field, value) {
                             (Some(s), None, _) => {
-                                println!("tunables for '{}':", current_name.as_deref().unwrap_or("?"));
+                                println!(
+                                    "tunables for '{}':",
+                                    current_name.as_deref().unwrap_or("?")
+                                );
                                 for line in s.tunables.to_lines() {
                                     println!("  {}", line);
                                 }
                             }
-                            (Some(s), Some(f), Some(v)) => {
-                                match s.tunables.set_field(&f, &v) {
-                                    Ok(()) => println!("set {} = {} (live, next event uses new value)", f, v),
-                                    Err(e) => eprintln!("{}", e),
+                            (Some(s), Some(f), Some(v)) => match s.tunables.set_field(&f, &v) {
+                                Ok(()) => {
+                                    println!("set {} = {} (live, next event uses new value)", f, v)
                                 }
-                            }
+                                Err(e) => eprintln!("{}", e),
+                            },
                             (Some(_), Some(f), None) => eprintln!("usage: tune {} <value>", f),
                             (None, _, _) => eprintln!("no world loaded"),
                         },
@@ -282,10 +363,15 @@ fn main() {
                     prompt();
                 }
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => { quit = true; break; }
+                Err(TryRecvError::Disconnected) => {
+                    quit = true;
+                    break;
+                }
             }
         }
-        if quit { break; }
+        if quit {
+            break;
+        }
 
         let now = Instant::now();
         match sim.as_mut() {
@@ -311,7 +397,12 @@ fn main() {
                         println!("+{} -> alive={} food={}", gained, s.citizens(), s.food);
                     }
                     if died > 0 {
-                        println!("-{} -> dead={} alive={}", died, s.dead_count(), s.citizens());
+                        println!(
+                            "-{} -> dead={} alive={}",
+                            died,
+                            s.dead_count(),
+                            s.citizens()
+                        );
                     }
 
                     leftover -= tick_len;

@@ -14,7 +14,10 @@ mod tests {
     fn same_seed_same_citizens() {
         let mut a = Sim::new(7);
         let mut b = Sim::new(7);
-        for _ in 0..500 { a.tick(); b.tick(); }
+        for _ in 0..500 {
+            a.tick();
+            b.tick();
+        }
         assert_eq!(a.citizen_ids, b.citizen_ids);
         assert_eq!(a.citizen_eq, b.citizen_eq);
         assert_eq!(a.dead_citizen_ids, b.dead_citizen_ids);
@@ -25,22 +28,34 @@ mod tests {
     fn food_limits_growth() {
         // Starting food 100 / 10 per spawn = 10 more citizens possible.
         let mut s = Sim::new(7);
-        for _ in 0..10_000 { s.tick(); }
+        for _ in 0..10_000 {
+            s.tick();
+        }
         assert!(s.food <= 0, "food should be exhausted, got {}", s.food);
         // 10 starting + up to 10 from food, minus any deaths
-        assert!(s.citizens() <= 20, "grew past food budget: {}", s.citizens());
+        assert!(
+            s.citizens() <= 20,
+            "grew past food budget: {}",
+            s.citizens()
+        );
     }
 
     #[test]
     fn adding_food_enables_more_growth() {
         let mut s = Sim::new(7);
-        for _ in 0..2000 { s.tick(); }
+        for _ in 0..2000 {
+            s.tick();
+        }
         let before = s.citizens();
         s.add_food(10_000);
-        for _ in 0..2000 { s.tick(); }
+        for _ in 0..2000 {
+            s.tick();
+        }
         assert!(s.citizens() >= before, "population shrank unexpectedly");
-        assert!(s.citizens() + s.dead_count() > before || s.citizens() > before,
-                "no new citizens appeared after adding food");
+        assert!(
+            s.citizens() + s.dead_count() > before || s.citizens() > before,
+            "no new citizens appeared after adding food"
+        );
     }
 
     #[test]
@@ -48,7 +63,9 @@ mod tests {
         let mut s = Sim::new(7);
         s.add_food(10_000);
         // Run long enough that at least one death fires (interval 100-300).
-        for _ in 0..2000 { s.tick(); }
+        for _ in 0..2000 {
+            s.tick();
+        }
         assert!(s.dead_count() > 0, "no deaths fired in 2000 ticks");
         // No ID appears in both alive and dead.
         let alive: std::collections::HashSet<_> = s.citizen_ids.iter().copied().collect();
@@ -62,7 +79,9 @@ mod tests {
         let mut a = Sim::new(7);
         a.add_food(10_000);
         a.set_cap(100);
-        for _ in 0..2000 { a.tick(); }
+        for _ in 0..2000 {
+            a.tick();
+        }
         assert!(a.dead_count() > 0, "test needs at least one death");
 
         let path = std::env::temp_dir().join("city_sim_test_save");
@@ -79,7 +98,10 @@ mod tests {
         assert_eq!(a.dead_citizen_eq, b.dead_citizen_eq);
         assert_eq!(a.dead_citizen_death_tick, b.dead_citizen_death_tick);
 
-        for _ in 0..200 { a.tick(); b.tick(); }
+        for _ in 0..200 {
+            a.tick();
+            b.tick();
+        }
         assert_eq!(a.citizen_eq, b.citizen_eq);
         assert_eq!(a.food, b.food);
     }

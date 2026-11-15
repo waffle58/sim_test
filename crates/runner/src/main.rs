@@ -34,6 +34,9 @@ enum Command {
         field: Option<String>,
         value: Option<String>,
     },
+    Inspect { 
+        id: u32 
+    },
     Help,
     Quit,
     Unknown(String),
@@ -102,6 +105,15 @@ fn parse_command(line: &str) -> Command {
         "cap" => Command::SetCap {
             amount: parts.next().and_then(|s| s.parse().ok()).unwrap_or(0),
         },
+        "inspect" => {
+            let raw = parts.next().unwrap_or("");
+            let cleaned = raw.trim_start_matches('0');
+            let to_parse = if cleaned.is_empty() { "0" } else { cleaned };
+            match to_parse.parse::<u32>() {
+                Ok(id) if id <= 999_999_999 => Command::Inspect { id },
+                _ => Command::Unknown(format!("inspect {}", raw)),
+            }
+        }
         "help" | "?" => Command::Help,
         "quit" | "exit" | "q" => Command::Quit,
         "tune" => {
@@ -172,6 +184,7 @@ fn print_help() {
     println!("  list [dead]            print alive citizens (or dead ones)");
     println!("  add food <n>           add n to the food stockpile");
     println!("  cap <n>                set population cap to n");
+    println!("  inspect <id>           show one citizen (9-digit or plain id)");
     println!("  help                   this list");
     println!("  tune                   show current world's tunables");
     println!("  tune <field> <value>   modify a tunable live");
@@ -321,6 +334,29 @@ fn main() {
                                     }
                                 }
                             }
+                            None => eprintln!("no world loaded"),
+                        },
+                        Command::Inspect { id } => match &sim {
+                            Some(s) => match s.find_by_id(id) {
+                                Some(v) => {
+                                    println!("citizen {:09}", v.id);
+                                    println!("  name      {} {}", v.given_name, v.surname);
+                                    println!("  sex       {}", if v.female { "female" } else { "male" });
+                                    println!("  native    {}", if v.native_born { "yes (born here)" } else { "no (immigrant)" });
+                                    println!("  eq        {:.2}", v.eq);
+                                    if v.aptitude.is_nan() {
+                                        println!("  aptitude  (not recorded)");
+                                    } else {
+                                        println!("  aptitude  {:.2}", v.aptitude);
+                                    }
+                                    if let Some(t) = v.death_tick {
+                                        println!("  status    dead (died tick {})", t);
+                                    } else {
+                                        println!("  status    alive");
+                                    }
+                                }
+                                None => eprintln!("citizen {:09} not found", id),
+                            },
                             None => eprintln!("no world loaded"),
                         },
                         Command::Tune { field, value } => match (&mut sim, field, value) {

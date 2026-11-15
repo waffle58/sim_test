@@ -3,9 +3,15 @@ mod random;
 mod save;
 mod sim;
 mod tunables;
+mod names;
 
 pub use self::random::stable_random;
-pub use self::sim::{Civ, DeadCiv, Sim};
+pub use self::sim::{
+    Civ,
+    DeadCiv, 
+    InspectView, 
+    Sim
+};
 pub use self::tunables::Tunables;
 
 

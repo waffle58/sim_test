@@ -1,5 +1,5 @@
 pub use self::random::stable_random;
-pub use self::sim::{CitizenView, DeadCitizenView, Sim, Tunables};
+pub use self::sim::{Civ, DeadCiv, Sim, Tunables};
 
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
@@ -34,9 +34,9 @@ mod tests {
         assert!(s.food <= 0, "food should be exhausted, got {}", s.food);
         // 10 starting + up to 10 from food, minus any deaths
         assert!(
-            s.citizens() <= 20,
+            s.civs() <= 20,
             "grew past food budget: {}",
-            s.citizens()
+            s.civs()
         );
     }
 
@@ -46,14 +46,14 @@ mod tests {
         for _ in 0..2000 {
             s.tick();
         }
-        let before = s.citizens();
+        let before = s.civs();
         s.add_food(10_000);
         for _ in 0..2000 {
             s.tick();
         }
-        assert!(s.citizens() >= before, "population shrank unexpectedly");
+        assert!(s.civs() >= before, "population shrank unexpectedly");
         assert!(
-            s.citizens() + s.dead_count() > before || s.citizens() > before,
+            s.civs() + s.dead_civs() > before || s.civs() > before,
             "no new citizens appeared after adding food"
         );
     }
@@ -66,7 +66,7 @@ mod tests {
         for _ in 0..2000 {
             s.tick();
         }
-        assert!(s.dead_count() > 0, "no deaths fired in 2000 ticks");
+        assert!(s.dead_civs() > 0, "no deaths fired in 2000 ticks");
         // No ID appears in both alive and dead.
         let alive: std::collections::HashSet<_> = s.citizen_ids.iter().copied().collect();
         for &id in &s.dead_citizen_ids {
@@ -82,7 +82,7 @@ mod tests {
         for _ in 0..2000 {
             a.tick();
         }
-        assert!(a.dead_count() > 0, "test needs at least one death");
+        assert!(a.dead_civs() > 0, "test needs at least one death");
 
         let path = std::env::temp_dir().join("city_sim_test_save");
         let _ = std::fs::remove_dir_all(&path);
@@ -110,8 +110,8 @@ mod tests {
     fn citizen_codes_are_unique() {
         let s = Sim::new(7);
         let mut seen = std::collections::HashSet::new();
-        for i in 0..s.citizens() as usize {
-            assert!(seen.insert(s.citizen_display_id(i)));
+        for i in 0..s.civs() as usize {
+            assert!(seen.insert(s.civ_id_display(i)));
         }
     }
 }

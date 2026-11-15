@@ -15,7 +15,7 @@ const EVENT_POP_INTERVAL: u64 = 2;
 const EVENT_DEATH_INTERVAL: u64 = 6;
 const EVENT_DEATH_COUNT: u64 = 7;
 const EVENT_DEATH_PICK: u64 = 8;
-pub const MAX_CITIZEN_ID: u32 = 999_999_999;
+pub const MAX_CIV_ID: u32 = 999_999_999;
 const SAVE_VERSION: u32 = 5;
 const CITIZENS_PER_SHARD: usize = 10_000;
 
@@ -288,7 +288,7 @@ impl Sim {
             tunables,
         };
         for _ in 0..sim.tunables.starting_citizens {
-            if sim.spawn_citizen().is_none() {
+            if sim.spawn_civ().is_none() {
                 break;
             }
         }
@@ -297,8 +297,8 @@ impl Sim {
         sim
     }
 
-    pub fn spawn_citizen(&mut self) -> Option<u32> {
-        if self.next_citizen_id > MAX_CITIZEN_ID {
+    pub fn spawn_civ(&mut self) -> Option<u32> {
+        if self.next_citizen_id > MAX_CIV_ID {
             return None;
         }
         let id = self.next_citizen_id;
@@ -309,7 +309,7 @@ impl Sim {
         self.citizen_eq.push(eq);
         Some(id)
     }
-    fn kill_citizen(&mut self, idx: usize) {
+    fn kill_civ(&mut self, idx: usize) {
         let id = self.citizen_ids.swap_remove(idx);
         let eq = self.citizen_eq.swap_remove(idx);
         self.dead_citizen_ids.push(id);
@@ -390,7 +390,7 @@ impl Sim {
             let kills = (r % (self.tunables.max_death as u64 + 1)) as u32;
             for kill_idx in 0..kills {
                 if let Some(victim) = self.roll_death_victim(kill_idx) {
-                    self.kill_citizen(victim);
+                    self.kill_civ(victim);
                     died += 1;
                 }
             }
@@ -419,7 +419,7 @@ impl Sim {
 
         let mut spawned = 0;
         for _ in 0..actual {
-            if self.spawn_citizen().is_none() {
+            if self.spawn_civ().is_none() {
                 break;
             }
             spawned += 1;
@@ -428,10 +428,10 @@ impl Sim {
         (spawned, died)
     }
 
-    pub fn citizens(&self) -> u32 {
+    pub fn civs(&self) -> u32 {
         self.citizen_ids.len() as u32
     }
-    pub fn dead_count(&self) -> u32 {
+    pub fn dead_civs(&self) -> u32 {
         self.dead_citizen_ids.len() as u32
     }
     pub fn total_deaths(&self) -> u64 {
@@ -444,26 +444,26 @@ impl Sim {
         self.population_cap = cap;
     }
 
-    pub fn citizen(&self, i: usize) -> CitizenView {
-        CitizenView {
+    pub fn civ(&self, i: usize) -> Civ {
+        Civ {
             id: self.citizen_ids[i],
             eq: self.citizen_eq[i],
         }
     }
 
-    pub fn dead_citizen(&self, i: usize) -> DeadCitizenView {
-        DeadCitizenView {
+    pub fn dead_civ(&self, i: usize) -> DeadCiv {
+        DeadCiv {
             id: self.dead_citizen_ids[i],
             eq: self.dead_citizen_eq[i],
             death_tick: self.dead_citizen_death_tick[i],
         }
     }
 
-    pub fn citizen_display_id(&self, i: usize) -> String {
+    pub fn civ_id_display(&self, i: usize) -> String {
         format!("{:09}", self.citizen_ids[i])
     }
 
-    pub fn dead_citizen_display_id(&self, i: usize) -> String {
+    pub fn dead_civ_id_display(&self, i: usize) -> String {
         format!("{:09}", self.dead_citizen_ids[i])
     }
 
@@ -620,13 +620,13 @@ fn load_shards(dir: &Path) -> std::io::Result<(Vec<u32>, Vec<f32>, Vec<u64>)> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct CitizenView {
+pub struct Civ {
     pub id: u32,
     pub eq: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct DeadCitizenView {
+pub struct DeadCiv {
     pub id: u32,
     pub eq: f32,
     pub death_tick: u64,

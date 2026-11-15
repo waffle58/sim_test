@@ -218,7 +218,7 @@ fn main() {
                                     "new '{}' (seed {}), alive={} food={}",
                                     name,
                                     seed,
-                                    s.citizens(),
+                                    s.civs(),
                                     s.food
                                 );
                                 sim = Some(s);
@@ -235,8 +235,8 @@ fn main() {
                                         println!(
                                             "loaded '{}', alive={} dead={} food={} t={}",
                                             name,
-                                            s.citizens(),
-                                            s.dead_count(),
+                                            s.civs(),
+                                            s.dead_civs(),
                                             s.food,
                                             s.tick_count
                                         );
@@ -282,9 +282,9 @@ fn main() {
                                 "'{}' seed={} alive={}/{} dead={} (lifetime {}) food={} t={} {}",
                                 name,
                                 s.world_seed,
-                                s.citizens(),
+                                s.civs(),
                                 s.population_cap,
-                                s.dead_count(),
+                                s.dead_civs(),
                                 s.total_deaths(),
                                 s.food,
                                 s.tick_count,
@@ -297,14 +297,14 @@ fn main() {
                                 if dead {
                                     println!(
                                         "{} dead citizens in '{}':",
-                                        s.dead_count(),
+                                        s.dead_civs(),
                                         current_name.as_deref().unwrap_or("?")
                                     );
-                                    for i in 0..s.dead_count() as usize {
-                                        let d = s.dead_citizen(i);
+                                    for i in 0..s.dead_civs() as usize {
+                                        let d = s.dead_civ(i);
                                         println!(
                                             "  {} eq={:.2} died_t={}",
-                                            s.dead_citizen_display_id(i),
+                                            s.dead_civ_id_display(i),
                                             d.eq,
                                             d.death_tick
                                         );
@@ -312,12 +312,12 @@ fn main() {
                                 } else {
                                     println!(
                                         "{} alive citizens in '{}':",
-                                        s.citizens(),
+                                        s.civs(),
                                         current_name.as_deref().unwrap_or("?")
                                     );
-                                    for i in 0..s.citizens() as usize {
-                                        let c = s.citizen(i);
-                                        println!("  {} eq={:.2}", s.citizen_display_id(i), c.eq);
+                                    for i in 0..s.civs() as usize {
+                                        let c = s.civ(i);
+                                        println!("  {} eq={:.2}", s.civ_id_display(i), c.eq);
                                     }
                                 }
                             }
@@ -394,14 +394,14 @@ fn main() {
                         );
                     }
                     if gained > 0 {
-                        println!("+{} -> alive={} food={}", gained, s.citizens(), s.food);
+                        println!("+{} -> alive={} food={}", gained, s.civs(), s.food);
                     }
                     if died > 0 {
                         println!(
                             "-{} -> dead={} alive={}",
                             died,
-                            s.dead_count(),
-                            s.citizens()
+                            s.dead_civs(),
+                            s.civs()
                         );
                     }
 

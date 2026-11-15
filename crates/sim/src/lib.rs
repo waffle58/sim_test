@@ -18,9 +18,9 @@ mod tests {
             a.tick();
             b.tick();
         }
-        assert_eq!(a.citizen_ids, b.citizen_ids);
-        assert_eq!(a.citizen_eq, b.citizen_eq);
-        assert_eq!(a.dead_citizen_ids, b.dead_citizen_ids);
+        assert_eq!(a.civ_ids, b.civ_ids);
+        assert_eq!(a.civ_eq, b.civ_eq);
+        assert_eq!(a.dead_civ_ids, b.dead_civ_ids);
         assert_eq!(a.food, b.food);
     }
 
@@ -68,8 +68,8 @@ mod tests {
         }
         assert!(s.dead_civs() > 0, "no deaths fired in 2000 ticks");
         // No ID appears in both alive and dead.
-        let alive: std::collections::HashSet<_> = s.citizen_ids.iter().copied().collect();
-        for &id in &s.dead_citizen_ids {
+        let alive: std::collections::HashSet<_> = s.civ_ids.iter().copied().collect();
+        for &id in &s.dead_civ_ids {
             assert!(!alive.contains(&id), "id {} is both alive and dead", id);
         }
     }
@@ -92,17 +92,17 @@ mod tests {
         let mut b = Sim::load(path).unwrap();
         assert_eq!(a.food, b.food);
         assert_eq!(a.population_cap, b.population_cap);
-        assert_eq!(a.citizen_ids, b.citizen_ids);
-        assert_eq!(a.citizen_eq, b.citizen_eq);
-        assert_eq!(a.dead_citizen_ids, b.dead_citizen_ids);
-        assert_eq!(a.dead_citizen_eq, b.dead_citizen_eq);
-        assert_eq!(a.dead_citizen_death_tick, b.dead_citizen_death_tick);
+        assert_eq!(a.civ_ids, b.civ_ids);
+        assert_eq!(a.civ_eq, b.civ_eq);
+        assert_eq!(a.dead_civ_ids, b.dead_civ_ids);
+        assert_eq!(a.dead_civ_eq, b.dead_civ_eq);
+        assert_eq!(a.dead_civ_death_tick, b.dead_civ_death_tick);
 
         for _ in 0..200 {
             a.tick();
             b.tick();
         }
-        assert_eq!(a.citizen_eq, b.citizen_eq);
+        assert_eq!(a.civ_eq, b.civ_eq);
         assert_eq!(a.food, b.food);
     }
 

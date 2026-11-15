@@ -16,7 +16,7 @@ const EVENT_DEATH_INTERVAL: u64 = 6;
 const EVENT_DEATH_COUNT: u64 = 7;
 const EVENT_DEATH_PICK: u64 = 8;
 pub const MAX_CIV_ID: u32 = 999_999_999;
-const SAVE_VERSION: u32 = 5;
+const SAVE_VERSION: u32 = 6;
 const CITIZENS_PER_SHARD: usize = 10_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -159,15 +159,15 @@ pub struct Sim {
     pub population_cap: u32,
     pub tunables: Tunables,
 
-    pub citizen_ids: Vec<u32>,
-    pub citizen_eq: Vec<f32>,
-    pub next_citizen_id: u32,
+    pub civ_ids: Vec<u32>,
+    pub civ_eq: Vec<f32>,
+    pub next_civ_id: u32,
     next_growth_tick: u64,
     next_death_tick: u64,
 
-    pub dead_citizen_ids: Vec<u32>,
-    pub dead_citizen_eq: Vec<f32>,
-    pub dead_citizen_death_tick: Vec<u64>,
+    pub dead_civ_ids: Vec<u32>,
+    pub dead_civ_eq: Vec<f32>,
+    pub dead_civ_death_tick: Vec<u64>,
     pub total_deaths: u64,
 }
 
@@ -179,7 +179,7 @@ struct Meta {
     food: i64,
     population_cap: u32,
     tunables: Tunables,
-    next_citizen_id: u32,
+    next_civ_id: u32,
     next_growth_tick: u64,
     next_death_tick: u64,
     total_deaths: u64,
@@ -276,14 +276,14 @@ impl Sim {
             tick_count: 0,
             food: tunables.starting_food,
             population_cap: tunables.default_cap,
-            citizen_ids: Vec::new(),
-            citizen_eq: Vec::new(),
-            next_citizen_id: 0,
+            civ_ids: Vec::new(),
+            civ_eq: Vec::new(),
+            next_civ_id: 0,
             next_growth_tick: 0,
             next_death_tick: 0,
-            dead_citizen_ids: Vec::new(),
-            dead_citizen_eq: Vec::new(),
-            dead_citizen_death_tick: Vec::new(),
+            dead_civ_ids: Vec::new(),
+            dead_civ_eq: Vec::new(),
+            dead_civ_death_tick: Vec::new(),
             total_deaths: 0,
             tunables,
         };
@@ -298,39 +298,39 @@ impl Sim {
     }
 
     pub fn spawn_civ(&mut self) -> Option<u32> {
-        if self.next_citizen_id > MAX_CIV_ID {
+        if self.next_civ_id > MAX_CIV_ID {
             return None;
         }
-        let id = self.next_citizen_id;
-        self.next_citizen_id += 1;
+        let id = self.next_civ_id;
+        self.next_civ_id += 1;
         let r = stable_random(id as u64, EVENT_INITIAL_EQ, self.world_seed);
         let eq = (r % 100) as f32 / 100.0;
-        self.citizen_ids.push(id);
-        self.citizen_eq.push(eq);
+        self.civ_ids.push(id);
+        self.civ_eq.push(eq);
         Some(id)
     }
     fn kill_civ(&mut self, idx: usize) {
-        let id = self.citizen_ids.swap_remove(idx);
-        let eq = self.citizen_eq.swap_remove(idx);
-        self.dead_citizen_ids.push(id);
-        self.dead_citizen_eq.push(eq);
-        self.dead_citizen_death_tick.push(self.tick_count);
+        let id = self.civ_ids.swap_remove(idx);
+        let eq = self.civ_eq.swap_remove(idx);
+        self.dead_civ_ids.push(id);
+        self.dead_civ_eq.push(eq);
+        self.dead_civ_death_tick.push(self.tick_count);
         self.total_deaths += 1;
         self.cull_dead();
     }
 
     fn cull_dead(&mut self) {
         let cap = self.tunables.max_dead_retained as usize;
-        if cap == 0 || self.dead_citizen_ids.len() <= cap {
+        if cap == 0 || self.dead_civ_ids.len() <= cap {
             return;
         }
         let trim = (cap / 10).max(1);
-        self.dead_citizen_ids.drain(0..trim);
-        self.dead_citizen_eq.drain(0..trim);
-        self.dead_citizen_death_tick.drain(0..trim);
+        self.dead_civ_ids.drain(0..trim);
+        self.dead_civ_eq.drain(0..trim);
+        self.dead_civ_death_tick.drain(0..trim);
     }
     fn roll_death_victim(&self, kill_idx: u32) -> Option<usize> {
-        let n = self.citizen_ids.len();
+        let n = self.civ_ids.len();
         if n == 0 {
             return None;
         }
@@ -366,8 +366,8 @@ impl Sim {
         let mut died = 0u32;
 
         // 1. Per-citizen eq drift
-        for i in 0..self.citizen_ids.len() {
-            let key = (self.citizen_ids[i] as u64) ^ (self.tick_count << 32);
+        for i in 0..self.civ_ids.len() {
+            let key = (self.civ_ids[i] as u64) ^ (self.tick_count << 32);
             if stable_random(key, EVENT_EQ_TRIGGER, self.world_seed)
                 % self.tunables.eq_drift_period.max(1)
                 != 0
@@ -380,7 +380,7 @@ impl Sim {
                 1 => 0.0,
                 _ => EQ_STEP,
             };
-            self.citizen_eq[i] = quantize_eq((self.citizen_eq[i] + delta).clamp(0.0, 1.0));
+            self.civ_eq[i] = quantize_eq((self.civ_eq[i] + delta).clamp(0.0, 1.0));
         }
 
         // 2. Death event
@@ -402,7 +402,7 @@ impl Sim {
         }
         self.next_growth_tick = self.tick_count + self.roll_growth_interval(self.tick_count);
 
-        let alive = self.citizen_ids.len() as u32;
+        let alive = self.civ_ids.len() as u32;
         if alive >= self.population_cap {
             return (0, died);
         }
@@ -429,10 +429,10 @@ impl Sim {
     }
 
     pub fn civs(&self) -> u32 {
-        self.citizen_ids.len() as u32
+        self.civ_ids.len() as u32
     }
     pub fn dead_civs(&self) -> u32 {
-        self.dead_citizen_ids.len() as u32
+        self.dead_civ_ids.len() as u32
     }
     pub fn total_deaths(&self) -> u64 {
         self.total_deaths
@@ -446,25 +446,25 @@ impl Sim {
 
     pub fn civ(&self, i: usize) -> Civ {
         Civ {
-            id: self.citizen_ids[i],
-            eq: self.citizen_eq[i],
+            id: self.civ_ids[i],
+            eq: self.civ_eq[i],
         }
     }
 
     pub fn dead_civ(&self, i: usize) -> DeadCiv {
         DeadCiv {
-            id: self.dead_citizen_ids[i],
-            eq: self.dead_citizen_eq[i],
-            death_tick: self.dead_citizen_death_tick[i],
+            id: self.dead_civ_ids[i],
+            eq: self.dead_civ_eq[i],
+            death_tick: self.dead_civ_death_tick[i],
         }
     }
 
     pub fn civ_id_display(&self, i: usize) -> String {
-        format!("{:09}", self.citizen_ids[i])
+        format!("{:09}", self.civ_ids[i])
     }
 
     pub fn dead_civ_id_display(&self, i: usize) -> String {
-        format!("{:09}", self.dead_citizen_ids[i])
+        format!("{:09}", self.dead_civ_ids[i])
     }
 
     pub fn save(&self, dir: &str) -> std::io::Result<()> {
@@ -483,7 +483,7 @@ impl Sim {
             food: self.food,
             population_cap: self.population_cap,
             tunables: self.tunables.clone(),
-            next_citizen_id: self.next_citizen_id,
+            next_civ_id: self.next_civ_id,
             next_growth_tick: self.next_growth_tick,
             next_death_tick: self.next_death_tick,
             total_deaths: self.total_deaths,
@@ -497,12 +497,12 @@ impl Sim {
         fs::create_dir_all(&alive_dir)?;
         fs::create_dir_all(&dead_dir)?;
 
-        save_shards(&alive_dir, &self.citizen_ids, &self.citizen_eq, None)?;
+        save_shards(&alive_dir, &self.civ_ids, &self.civ_eq, None)?;
         save_shards(
             &dead_dir,
-            &self.dead_citizen_ids,
-            &self.dead_citizen_eq,
-            Some(&self.dead_citizen_death_tick),
+            &self.dead_civ_ids,
+            &self.dead_civ_eq,
+            Some(&self.dead_civ_death_tick),
         )?;
 
         // ---- atomic swap: old save survives until this line ----
@@ -525,7 +525,7 @@ impl Sim {
 
         let citizens_dir = root.join("citizens");
         let (citizen_ids, citizen_eq, _) = load_shards(&citizens_dir.join("alive"))?;
-        let (dead_citizen_ids, dead_citizen_eq, dead_citizen_death_tick) =
+        let (dead_citizen_ids, dead_civ_eq, dead_citizen_death_tick) =
             load_shards(&citizens_dir.join("dead"))?;
         let n = citizen_ids.len();
         if citizen_eq.len() != n {
@@ -539,13 +539,13 @@ impl Sim {
             ));
         }
         let nd = dead_citizen_ids.len();
-        if dead_citizen_eq.len() != nd || dead_citizen_death_tick.len() != nd {
+        if dead_civ_eq.len() != nd || dead_citizen_death_tick.len() != nd {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
                     "dead columns mismatched: ids={} eq={} tick={}",
                     nd,
-                    dead_citizen_eq.len(),
+                    dead_civ_eq.len(),
                     dead_citizen_death_tick.len()
                 ),
             ));
@@ -557,14 +557,14 @@ impl Sim {
             food: meta.food,
             population_cap: meta.population_cap,
             tunables: meta.tunables,
-            citizen_ids,
-            citizen_eq,
-            next_citizen_id: meta.next_citizen_id,
+            civ_ids: citizen_ids,
+            civ_eq: citizen_eq,
+            next_civ_id: meta.next_civ_id,
             next_growth_tick: meta.next_growth_tick,
             next_death_tick: meta.next_death_tick,
-            dead_citizen_ids,
-            dead_citizen_eq,
-            dead_citizen_death_tick,
+            dead_civ_ids: dead_citizen_ids,
+            dead_civ_eq: dead_civ_eq,
+            dead_civ_death_tick: dead_citizen_death_tick,
             total_deaths: meta.total_deaths,
         })
     }

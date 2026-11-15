@@ -1,11 +1,12 @@
 pub use self::random::stable_random;
-pub use self::sim::{Civ, DeadCiv, Sim, Tunables};
+pub use self::sim::{Civ, DeadCiv, Sim};
+mod tunables;
+pub use self::tunables::Tunables;
 
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
 mod random;
 mod sim;
-
 #[cfg(test)]
 mod tests {
     use super::*;

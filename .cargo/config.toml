@@ -1,0 +1,3 @@
+[alias]
+start = "run -p runner"
+fast  = "run -p runner --release"

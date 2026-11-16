@@ -1,14 +1,18 @@
 {
-  "starting_citizens": 100000,
-  "starting_food": 1000000000000,
-  "default_cap": 50,
+  "starting_citizens": 500,
+  "starting_food": 99999999999,
+  "default_cap": 999999,
   "food_per_spawn": 10,
-  "min_growth_interval": 35,
-  "max_growth_interval": 45,
+  "min_growth_interval": 5,
+  "max_growth_interval": 5,
   "max_growth": 3,
-  "min_death_interval": 95,
-  "max_death_interval": 105,
+  "min_death_interval": 5,
+  "max_death_interval": 5,
   "max_death": 2,
   "eq_drift_period": 17,
-  "max_dead_retained": 10000
+  "max_dead_retained": 10000,
+  "initial_couple_percent": 60,
+  "couple_rate_percent": 5,
+  "min_couple_interval": 100,
+  "max_couple_interval": 200
 }

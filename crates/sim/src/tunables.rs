@@ -15,6 +15,10 @@ pub struct Tunables {
     pub max_death: u32,
     pub eq_drift_period: u64,
     pub max_dead_retained: u32,
+    pub initial_couple_percent: u32,
+    pub couple_rate_percent: u32,
+    pub min_couple_interval: u64,
+    pub max_couple_interval: u64,
 }
 
 impl Default for Tunables {
@@ -32,6 +36,10 @@ impl Default for Tunables {
             max_death: 2,
             eq_drift_period: 17,
             max_dead_retained: 10_000,
+            initial_couple_percent: 60,
+            couple_rate_percent: 5,
+            min_couple_interval: 100,
+            max_couple_interval: 200,
         }
     }
 }
@@ -53,6 +61,11 @@ impl Tunables {
         let parse_u64 = |v: &str| v.parse::<u64>().map_err(|_| format!("invalid number '{}'", v));
         let parse_i64 = |v: &str| v.parse::<i64>().map_err(|_| format!("invalid number '{}'", v));
         let parse_u32 = |v: &str| v.parse::<u32>().map_err(|_| format!("invalid number '{}'", v));
+        if self.min_couple_interval > self.max_couple_interval {
+        return Err(format!(
+        "min_couple_interval ({}) > max_couple_interval ({})",
+        self.min_couple_interval, self.max_couple_interval));
+}
 
         match field {
             "starting_citizens"    => self.starting_citizens = parse_u32(value)?,
@@ -67,6 +80,10 @@ impl Tunables {
             "max_death"            => self.max_death = parse_u32(value)?,
             "eq_drift_period"      => self.eq_drift_period = parse_u64(value)?,
             "max_dead_retained"    => self.max_dead_retained = parse_u32(value)?,
+            "initial_couple_percent" => self.initial_couple_percent = parse_u32(value)?,
+            "couple_rate_percent"    => self.couple_rate_percent = parse_u32(value)?,
+            "min_couple_interval"    => self.min_couple_interval = parse_u64(value)?,
+            "max_couple_interval"    => self.max_couple_interval = parse_u64(value)?,
             other => return Err(format!("unknown field '{}'", other)),
         }
 
@@ -97,6 +114,10 @@ impl Tunables {
             format!("max_death            = {}", self.max_death),
             format!("eq_drift_period      = {} ticks", self.eq_drift_period),
             format!("max_dead_retained    = {}", self.max_dead_retained),
+            format!("initial_couple_percent = {}", self.initial_couple_percent),
+            format!("couple_rate_percent    = {}", self.couple_rate_percent),
+            format!("min_couple_interval    = {} ticks ({:.2}s)", self.min_couple_interval, self.min_couple_interval as f64 / 20.0),
+            format!("max_couple_interval    = {} ticks ({:.2}s)", self.max_couple_interval, self.max_couple_interval as f64 / 20.0),
         ]
     }
 }

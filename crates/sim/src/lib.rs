@@ -1,4 +1,3 @@
-//mod names;
 mod random;
 mod save;
 mod sim;
@@ -37,13 +36,11 @@ mod tests {
 
     #[test]
     fn food_limits_growth() {
-        // Starting food 100 / 10 per spawn = 10 more citizens possible.
         let mut s = Sim::new(7);
         for _ in 0..10_000 {
             s.tick();
         }
         assert!(s.food <= 0, "food should be exhausted, got {}", s.food);
-        // 10 starting + up to 10 from food, minus any deaths
         assert!(
             s.civs() <= 20,
             "grew past food budget: {}",
@@ -73,12 +70,10 @@ mod tests {
     fn death_moves_to_dead_columns() {
         let mut s = Sim::new(7);
         s.add_food(10_000);
-        // Run long enough that at least one death fires (interval 100-300).
         for _ in 0..2000 {
             s.tick();
         }
         assert!(s.dead_civs() > 0, "no deaths fired in 2000 ticks");
-        // No ID appears in both alive and dead.
         let alive: std::collections::HashSet<_> = s.civ_ids.iter().copied().collect();
         for &id in &s.dead_civ_ids {
             assert!(!alive.contains(&id), "id {} is both alive and dead", id);

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-const SAVE_VERSION: u32 = 8;
+const SAVE_VERSION: u32 = 10;
 const CITIZENS_PER_SHARD: usize = 10_000;
 
 #[derive(Serialize, Deserialize)]
@@ -19,6 +19,8 @@ struct Meta {
     next_growth_tick: u64,
     next_death_tick: u64,
     total_deaths: u64,
+    next_household_id: u32,
+    next_couple_tick: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,7 +37,18 @@ struct Shard {
     female: Vec<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     death_tick: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    household_id: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    surname_from: Vec<u32>,
 }
+#[derive(Serialize, Deserialize)]
+struct HouseholdShard {
+    ids: Vec<u32>,
+    member_starts: Vec<u32>,
+    member_ids: Vec<u32>,
+}
+
 
 struct ColumnarFormatter;
 impl serde_json::ser::Formatter for ColumnarFormatter {
@@ -77,6 +90,8 @@ fn save_shards(
     aptitude: &[f32],
     female: &[bool],
     death_tick: Option<&[u64]>,
+    household_id: &[u32],
+    surname_from: &[u32],
 ) -> std::io::Result<()> {
     let n = ids.len();
     let shard_count = ((n + CITIZENS_PER_SHARD - 1) / CITIZENS_PER_SHARD).max(1);
@@ -91,6 +106,8 @@ fn save_shards(
             aptitude: aptitude.get(start..end).map(|s| s.to_vec()).unwrap_or_default(),
             female: female.get(start..end).map(|s| s.to_vec()).unwrap_or_default(),
             death_tick: death_tick.map(|d| d[start..end].to_vec()).unwrap_or_default(),
+            household_id: household_id.get(start..end).map(|s| s.to_vec()).unwrap_or_default(),
+            surname_from: surname_from.get(start..end).map(|s| s.to_vec()).unwrap_or_default(),
         };
         let shard_dir = dir.join(format!("{:03}", shard_idx));
         fs::create_dir_all(&shard_dir)?;
@@ -107,6 +124,8 @@ struct LoadedShards {
     aptitude: Vec<f32>,
     female: Vec<bool>,
     death_tick: Vec<u64>,
+    household_id: Vec<u32>,
+    surname_from: Vec<u32>,
 }
 
 fn load_shards(dir: &Path) -> std::io::Result<LoadedShards> {
@@ -118,6 +137,8 @@ fn load_shards(dir: &Path) -> std::io::Result<LoadedShards> {
         aptitude: Vec::new(),
         female: Vec::new(),
         death_tick: Vec::new(),
+        household_id: Vec::new(),
+        surname_from: Vec::new(),
     };
 
     let Ok(entries) = fs::read_dir(dir) else {
@@ -139,6 +160,8 @@ fn load_shards(dir: &Path) -> std::io::Result<LoadedShards> {
         out.aptitude.extend(s.aptitude);
         out.female.extend(s.female);
         out.death_tick.extend(s.death_tick);
+        out.household_id.extend(s.household_id);
+        out.surname_from.extend(s.surname_from);
     }
     Ok(out)
 }
@@ -162,6 +185,8 @@ impl Sim {
             next_growth_tick: self.next_growth_tick,
             next_death_tick: self.next_death_tick,
             total_deaths: self.total_deaths,
+            next_household_id: self.next_household_id,
+            next_couple_tick: self.next_couple_tick,
         };
         write_json(&tmp_path.join("meta.json"), &meta)?;
 
@@ -180,6 +205,8 @@ impl Sim {
             &self.civ_aptitude,
             &self.civ_female,
             None,
+            &self.civ_household,
+            &self.civ_surname_from,
         )?;
         save_shards(
             &dead_dir,
@@ -190,7 +217,17 @@ impl Sim {
             &[],
             &[],
             Some(&self.dead_civ_death_tick),
+            &[],
+            &[],
         )?;
+        let households_dir = tmp_path.join("households");
+        fs::create_dir_all(&households_dir)?;
+        let household_shard = HouseholdShard {
+            ids: self.household_ids.clone(),
+            member_starts: self.household_member_starts.clone(),
+            member_ids: self.household_member_ids.clone(),
+        };
+        write_json(&households_dir.join("data.json"), &household_shard)?;
 
         let _ = fs::remove_dir_all(final_path);
         fs::rename(&tmp_path, final_path)?;
@@ -214,13 +251,46 @@ impl Sim {
         let citizens_dir = root.join("citizens");
         let alive = load_shards(&citizens_dir.join("alive"))?;
         let dead = load_shards(&citizens_dir.join("dead"))?;
+        let household_shard: HouseholdShard = read_json(&root.join("households/data.json"))?;
 
+        if household_shard.member_starts.len() != household_shard.ids.len() + 1 {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                format!("household member_starts length {} != ids length {} + 1",
+                        household_shard.member_starts.len(), household_shard.ids.len())));
+        }
+        if household_shard.member_starts.last().copied().unwrap_or(0) as usize != household_shard.member_ids.len() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                "household member_starts.last != member_ids.len"));
+        }
+        for i in 0..household_shard.ids.len() {
+            if household_shard.member_starts[i + 1] < household_shard.member_starts[i] {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                    format!("household member_starts not monotonic at {}", i)));
+            }
+            if household_shard.member_starts[i + 1] == household_shard.member_starts[i] {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                    format!("empty household {} in save", household_shard.ids[i])));
+            }
+        }
+
+        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        for &civ_id in &household_shard.member_ids {
+            if !seen.insert(civ_id) {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                    format!("civ {} appears in multiple households", civ_id)));
+            }
+        }
+        if seen.len() != alive.ids.len() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                format!("{} civs but {} in households", alive.ids.len(), seen.len())));
+        }
         let n = alive.ids.len();
         if alive.eq.len() != n
             || alive.base_eq.len() != n
             || alive.native_born.len() != n
             || alive.aptitude.len() != n
             || alive.female.len() != n
+            || alive.surname_from.len() != n
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -259,6 +329,13 @@ impl Sim {
             dead_civ_eq: dead.eq,
             dead_civ_death_tick: dead.death_tick,
             total_deaths: meta.total_deaths,
+            civ_household: alive.household_id,
+            household_ids: household_shard.ids,
+            household_member_starts: household_shard.member_starts,
+            household_member_ids: household_shard.member_ids,
+            next_household_id: meta.next_household_id,
+            next_couple_tick: meta.next_couple_tick,
+            civ_surname_from: alive.surname_from,
         })
     }
 }

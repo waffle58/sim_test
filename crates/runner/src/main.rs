@@ -38,6 +38,7 @@ enum Command {
         id: u32 
     },
     Stats,
+    Households,
     Help,
     Quit,
     Unknown(String),
@@ -116,6 +117,7 @@ fn parse_command(line: &str) -> Command {
             }
         }
         "stats" => Command::Stats,
+        "households" | "hh" => Command::Households,
         "help" | "?" => Command::Help,
         "quit" | "exit" | "q" => Command::Quit,
         "tune" => {
@@ -295,15 +297,10 @@ fn main() {
                         }
                         Command::Status => match (&sim, &current_name) {
                             (Some(s), Some(name)) => println!(
-                                "'{}' seed={} alive={}/{} dead={} (lifetime {}) food={} t={} {}",
-                                name,
-                                s.world_seed,
-                                s.civs(),
-                                s.population_cap,
-                                s.dead_civs(),
-                                s.total_deaths(),
-                                s.food,
-                                s.tick_count,
+                                "'{}' seed={} alive={}/{} (♀{} ♂{}) hh={} dead={} (lifetime {}) food={} t={} {}",
+                                name, s.world_seed, s.civs(), s.population_cap,
+                                s.female_count(), s.male_count(), s.households(),
+                                s.dead_civs(), s.total_deaths(), s.food, s.tick_count,
                                 if paused { "(paused)" } else { "(running)" }
                             ),
                             _ => println!("no world loaded"),
@@ -359,7 +356,11 @@ fn main() {
                             Some(s) => match s.find_by_id(id) {
                                 Some(v) => {
                                     println!("citizen {:09}", v.id);
-                                    println!("  name      {} {}", v.given_name, v.surname);
+                                    if v.surname == v.birth_surname {
+                                        println!("  name      {} {}", v.given_name, v.surname);
+                                    } else {
+                                        println!("  name      {} {} (née {})", v.given_name, v.surname, v.birth_surname);
+                                    }
                                     println!("  sex       {}", if v.female { "female" } else { "male" });
                                     println!("  native    {}", if v.native_born { "yes (born here)" } else { "no (immigrant)" });
                                     println!("  eq        {:.2}", v.eq);
@@ -373,10 +374,28 @@ fn main() {
                                     } else {
                                         println!("  status    alive");
                                     }
+                                    if let Some(h) = s.civ_household_of(v.id) {
+                                    let members = s.household_members(h);
+                                    let member_strs: Vec<String> = members.iter().map(|m| format!("{:09}", m)).collect();
+                                    println!("  household  {:09} ({}) [{}]", h, members.len(), member_strs.join(", "));
+                                    }
                                 }
+                                
                                 None => eprintln!("citizen {:09} not found", id),
                             },
                             None => eprintln!("no world loaded"),
+                        },
+                        Command::Households => match &sim {
+                        Some(s) => {
+                            println!("{} households", s.households());
+                            for i in 0..s.households() as usize {
+                                let h_id = s.household_ids[i];
+                                let count = s.household_member_count(h_id);
+                                let mean = s.household_eq_mean(h_id);
+                                println!("  {:09} members={} mean_eq={:.2}", h_id, count, mean);
+                            }
+                        }
+                        None => eprintln!("no world loaded"),
                         },
                         Command::Tune { field, value } => match (&mut sim, field, value) {
                             (Some(s), None, _) => {
